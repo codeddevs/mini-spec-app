@@ -1,5 +1,8 @@
-# test tkinter GUI properties
-# edit 2023-9-29
+# Copyright (c) 2024 Coded Devices Oy
+
+# Mini Spec App GUI
+# edit 2024-1-11
+# todo : continue TIME D
 
 import tkinter
 from tkinter import ttk
@@ -14,12 +17,15 @@ import mini_settings
 import mini_file_operations as fop
 
 class GUI:
+
+    
     def __init__(self, root, callback):
 
         self.callback = callback
         self.root = root
         self.root.title("Mini Spec App by Coded Devices")
-        self.default_file_location = "c:"   #mini_settings.my_spectra_folder
+        self.default_file_location = "c:"   # mini_settings.my_spectra_folder
+        self.app_version = ""               # MainApp constructor sets version during start up
         
         # NOTEBOOK & STYLE definition
         self.notebook = ttk.Notebook(self.root)
@@ -125,23 +131,43 @@ class GUI:
 
         self.notebook.add(page_ave, text = ' AVERAGE ', padding='5')
 
-        # TAB 'SETTINGS' ************************************************************************
+        # __init__ TAB 'TIME D' *****************************************************************
+        # edit : 2023-1-12
+        page_timed = ttk.Frame(self.notebook)
+        self.notebook.add(page_timed, text=' TIME D', padding='5')
+        self.str_ch1_nm = tkinter.StringVar(page_timed, '550')
+        
+        self.label_ch1_nm = ttk.Label(page_timed, text='Channel #1 waveleght (nm) : ')
+        self.label_ch1_nm.grid(row=1, column=1, padx=5, pady=7, sticky=W)
+
+        self.entry_ch1_nm = ttk.Entry(page_timed, width=3, textvariable=self.str_ch1_nm, validate='focusout', validatecommand=self.new_ch1_wavelength)
+        self.entry_ch1_nm.grid(row=1, column=2, padx=5, pady=7, sticky=W)
+
+        self.button_read_one = ttk.Button(page_timed, text='READ ONE', command=self.button_read_one_click)
+        self.button_read_one.grid(row=1, column=3, padx=5, pady=7, sticky=W)
+
+
+        # __init__ TAB 'SETTINGS' ************************************************************************
         page_set = ttk.Frame(self.notebook)
         self.notebook.add(page_set, text=' SETTINGS ', padding='5')
 
-        self.str_version = tkinter.StringVar(page_set, '')
-        self.str_version.set('Program Version: ')
-
+        self.str_app_version = tkinter.StringVar(page_set, 'PC App Version: ?')
+        
+        self.str_fw_version = tkinter.StringVar(page_set, 'Firmware Version: ?')
+        
         self.str_port = tkinter.StringVar(page_set, 'COM port name: ' + mini_settings.comport_name)
         label_port = ttk.Label(page_set, textvariable=self.str_port)
-        label_port.grid(row=2, column=1, padx=5, pady=7, sticky=W)
+        label_port.grid(row=3, column=1, padx=5, pady=7, sticky=W)
         
-        label_version = ttk.Label(page_set, textvariable=self.str_version)
-        label_version.grid(row=1, column=1, padx=5, pady=7, sticky=W)
+        label_app_version = ttk.Label(page_set, textvariable=self.str_app_version)
+        label_app_version.grid(row=1, column=1, padx=5, pady=7, sticky=W)
+
+        label_fw_version = ttk.Label(page_set, textvariable=self.str_fw_version)
+        label_fw_version.grid(row=2, column=1, padx=5, pady=7, sticky=W)
 
         # LED intensity control
         labelfr_set_intensity = ttk.Labelframe(page_set, text=' LED intensity (0...31)')
-        labelfr_set_intensity.grid(column=1, row=3, padx=5, pady=7, sticky=E)
+        labelfr_set_intensity.grid(column=1, row=4, padx=5, pady=7, sticky=E)
         self.str_source_int = tkinter.StringVar(page_set, '')
         self.spin_intensity = ttk.Spinbox(labelfr_set_intensity, from_= 0, to=31, width=2, validate='focusout', validatecommand=self.spin_intensity_change, textvariable=self.str_source_int)    
         if (mini_settings.hw_source_intensity >= 0 and mini_settings.hw_source_intensity <= 31):    # set correct default to begin with
@@ -153,7 +179,25 @@ class GUI:
         self.button_set_intensity = ttk.Button(labelfr_set_intensity, text=' SET ', command=self.button_set_intensity_click)
         self.button_set_intensity.grid(column=3, row=1, padx=5, pady=7)
 
+        # __init__ INTEGRATION TIME control *************************
+        # edit 2023-12-31
+        min_itime = 10   # shortest possible integration time in ms
+        max_itime = 500  # longest possible
 
+        labelfr_set_integration = ttk.Labelframe(page_set, text=' Integration time (ms)')
+        labelfr_set_integration.grid(row=4, column=2, padx=5, pady=7, sticky=E)
+        
+        self.str_itime = tkinter.StringVar(labelfr_set_integration, '')
+        self.spin_itime =ttk.Spinbox(labelfr_set_integration, from_=min_itime, to=max_itime, width=3, validate='focusout', validatecommand=self.spin_itime_change, textvariable=self.str_itime)
+        if(mini_settings.hw_integration_time >= min_itime and mini_settings.hw_integration_time <= max_itime): # check that default is correct
+            self.str_itime.set(mini_settings.hw_integration_time)
+        else:
+            self.str_itime.set('20')
+        
+        self.button_set_itime = ttk.Button(labelfr_set_integration, text=' SET ', command=self.button_set_itime_click)
+        self.button_set_itime.grid(row=1, column=2, padx=5, pady=7)
+        
+        self.spin_itime.grid(row=1, column=1, padx=5, pady=7, sticky=E)
 
         # Notebook in the root window
         #self.notebook.pack(expand=1, fill='both')
@@ -172,7 +216,7 @@ class GUI:
         self.str_meas_source.set('New unsaved measurement in memory!')
         self.str_abs_meas_source.set('New unsaved measurement')
 
-    # button clear of the new-page event handler
+    # button clear of the MEAS-page event handler
     # desc: Clears only the graph not the memory --> spectrum can be drawn again
     # edit : 2023-9-17
     def button_new_clear_click(self):
@@ -187,6 +231,11 @@ class GUI:
     def button_set_intensity_click(self):
         #messagebox.showinfo('Intensity change', 'SET ' + self.str_source_int.get())
         self.callback('gui_int', led_intensity = int(self.str_source_int.get()))
+
+    # event handler for set button of integration time
+    # edit : 2023-12-29
+    def button_set_itime_click(self):
+        self.callback('gui_itime', time = int(self.str_itime.get()))
 
     # button_load event handler
     # edit: 2023-9-22
@@ -283,6 +332,21 @@ class GUI:
         #messagebox.showinfo('spinbox', str(self.spin_intensity.get()))
         return True
     
+    # edit : 2023-12-31
+    # desc : validate values in itime spinner
+    def spin_itime_change(self):
+        temp_value = int(self.str_itime.get())
+        min_time = int(self.spin_itime.config('from')[4])   # min val set in init
+        max_time = int(self.spin_itime.config('to')[4])     # max val 
+        
+        if temp_value < min_time:
+            temp_value = min_time
+        elif temp_value > max_time:
+            temp_value = max_time
+        self.str_itime.set('')
+        self.str_itime.set(str(temp_value))
+        return True
+    
     def test_validate(self):
         #temp_value = int(self.spin_intensity.get())
         temp_value = int(self.str_source_int.get())
@@ -314,13 +378,39 @@ class GUI:
             return short_name
         else:
             return name
-       
+        
+    # update version string
+    # edit : 2023-12-15
+    def update_version(self, app_version, fw_version):
+        self.str_app_version.set('PC App Version : ' + str(app_version))
+        self.str_fw_version.set('Firmware Version : ' + fw_version)
+
+    # check and vallidate ch1_nm entry value in TIME D tab
+    # edit : 2024-1-12
+    # todo : get max & min values somewhere
+    def new_ch1_wavelength(self, *args):
+        max_nm = 890
+        min_nm = 310
+        if (int(self.str_ch1_nm.get()) > max_nm):
+            self.str_ch1_nm.set(str(max_nm))
+        elif (int(self.str_ch1_nm.get()) < min_nm):
+            self.str_ch1_nm.set(str(min_nm))
+        return True
+    
+    # edit 2024-1-11
+    # desc : Eventhandler of 'READ ONE' button, gets one reading of ch1 wavelength
+    def button_read_one_click(self):
+        self.callback('gui_one', wavelength=self.str_ch1_nm.get())
+
+
+# edit 2023-12-15
 if __name__ == "__main__":
 
     def myCallback(callback_string):
         print("Callback received %s" %(callback_string))
-    
-    gui = GUI(myCallback)
+
+    root = tkinter.Tk()
+    gui = GUI(root, myCallback)
    
     # test function cut_long_filename
-    gui.cut_long_filename("tamaonpitkästriggi", 10)
+    gui.cut_long_filename("long string for testing", 10)
