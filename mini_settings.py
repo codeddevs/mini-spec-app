@@ -1,7 +1,7 @@
-# Copyright (c) 2022 Coded Devices Oy
+# Copyright (c) 2023 Coded Devices Oy
 
 # Settings for Mini Spec App
-# ver : 2022-8-19
+# ver : 2023-12-31
 
 # SPECIAL FILE NAMES
 background_file_name = "background.txt"
@@ -27,10 +27,13 @@ calib_b4 = 5.818299355e-9
 calib_b5 = 1.043693591e-11
 
 # HARD WARE TIME UNIT
-hw_time_to_ms = 1.6
+#hw_time_to_ms = 1.6
 
 # CHANNEL COUNT
 hw_channel_count = 288
 
 # DEFAULT SOURCE INTENSITY
 hw_source_intensity = 5
+
+# DEFAULT INTEGRATION TIME (ms)
+hw_integration_time = 20

@@ -1,8 +1,8 @@
 # Copyright (c) 2024 Coded Devices Oy
 
 # Mini Spec App GUI
-# edit 2024-1-11
-# todo : continue TIME D
+# edit 2024-3-28
+# todo : 
 
 import tkinter
 from tkinter import ttk
@@ -10,14 +10,16 @@ from tkinter import filedialog
 from tkinter import * 
 from tkinter import messagebox
 import time
+import threading
 from datetime import datetime
 
 
 import mini_settings
 import mini_file_operations as fop
 
-class GUI:
 
+# edit : 2024-3-28
+class GUI:
     
     def __init__(self, root, callback):
 
@@ -26,12 +28,16 @@ class GUI:
         self.root.title("Mini Spec App by Coded Devices")
         self.default_file_location = "c:"   # mini_settings.my_spectra_folder
         self.app_version = ""               # MainApp constructor sets version during start up
-        
+        self.continuousActivated = False
+        self.continuousInterval = 1000      # in ms
+        self.continuousCount = 0            # number of measured sets of selected channels in continuous mode
+
         # NOTEBOOK & STYLE definition
         self.notebook = ttk.Notebook(self.root)
         self.notebook.configure(padding=(5, 5))
         self.my_style = ttk.Style()
-        self.my_style.theme_use('winnative') # 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
+        #self.my_style.theme_use('winnative') # 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
+        self.my_style.theme_use('default') # 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
                                 
         # TAB 'MEAS' for brinning measurements **********************************************
         # edit : 2023-9-15
@@ -66,6 +72,8 @@ class GUI:
         self.notebook.add(page_meas, text=' MEAS ')
 
         # TAB 'ABSORPTION' ********************************************************************
+        # edit : 2024-2-26
+
         page_abs = ttk.Frame(self.notebook, padding='5')
         self.notebook.add(page_abs, text=' ABSORP ')
 
@@ -102,13 +110,13 @@ class GUI:
         button_change_file.grid(column=3, row=2, padx=5, pady=7)
 
         button_calc_abs = ttk.Button(page_abs, text="CALC ABS", command=self.button_calc_abs_click)
-        button_calc_abs.grid(column=1, row=5, padx=5, pady=7)
+        button_calc_abs.grid(row=5, column=1, padx=5, pady=7, sticky=W)
 
         button_save_abs = ttk.Button(page_abs, text='SAVE ABS', command=self.button_save_abs_click)
         button_save_abs.grid(row=6, column=1, padx=5, pady=7, sticky=W)
 
         button_clear_abs = ttk.Button(page_abs, text="CLEAR ABS", command=self.button_clear_abs_click)
-        button_clear_abs.grid(column=1, row=7, padx=5, pady=7)
+        button_clear_abs.grid(row=7, column=1, padx=5, pady=7, sticky=W)
 
         # TAB 'AVERAGE' *************************************************************************
         page_ave = ttk.Frame(self.notebook)
@@ -132,22 +140,67 @@ class GUI:
         self.notebook.add(page_ave, text = ' AVERAGE ', padding='5')
 
         # __init__ TAB 'TIME D' *****************************************************************
-        # edit : 2023-1-12
+        # edit : 2024-3-20
         page_timed = ttk.Frame(self.notebook)
-        self.notebook.add(page_timed, text=' TIME D', padding='5')
-        self.str_ch1_nm = tkinter.StringVar(page_timed, '550')
+        self.notebook.add(page_timed, text=' TIME D ', padding='5')
+
+        # todo : user selectable number of channels 
+        self.channel_list = []
+        self.channel_count = 3 # this is the only place for setting the channel count
+        self.callback('gui_timed_ch_count', count=self.channel_count) # number of channels to main for a suitable data array
+
+        self.labelFr_chs = ttk.LabelFrame(page_timed, text='Channels')
+        self.labelFr_chs.grid(row=1, column=1, padx=5, pady=7, sticky='NW')
         
-        self.label_ch1_nm = ttk.Label(page_timed, text='Channel #1 waveleght (nm) : ')
-        self.label_ch1_nm.grid(row=1, column=1, padx=5, pady=7, sticky=W)
+        for i in range(self.channel_count):
 
-        self.entry_ch1_nm = ttk.Entry(page_timed, width=3, textvariable=self.str_ch1_nm, validate='focusout', validatecommand=self.new_ch1_wavelength)
-        self.entry_ch1_nm.grid(row=1, column=2, padx=5, pady=7, sticky=W)
+            temp_str = tkinter.StringVar(self.labelFr_chs, str(450 + i*50))
+            temp_label = ttk.Label(self.labelFr_chs, text='Channel #' + str(i+1) + ':')
+            temp_label.grid(row = i+1, column=1, padx=5, pady=7, sticky=W)
 
-        self.button_read_one = ttk.Button(page_timed, text='READ ONE', command=self.button_read_one_click)
-        self.button_read_one.grid(row=1, column=3, padx=5, pady=7, sticky=W)
+            temp_entry = ttk.Entry(self.labelFr_chs, width=3, textvariable=temp_str, validate='focusout', validatecommand=self.new_wavelength)
+            temp_entry.grid(row = i+1, column=2, padx=5, pady=7, sticky=W)
+            #self.channel_list.append(Channel(temp_str, temp_label, temp_entry))
+            self.channel_list.append(temp_str) # wavelength as tkinter string variable
 
+            temp_label_after = ttk.Label(self.labelFr_chs, text='nm')
+            temp_label_after.grid(row=i+1, column=3, padx=5, pady=7, sticky=W)
+                
+        self.button_read_chs = ttk.Button(page_timed, text='ONCE', command=self.button_read_chs_click)
+        self.button_read_chs.grid(row=5, column=2, padx=5, pady=7, sticky=W)
+
+        self.button_reset_serie = ttk.Button(page_timed, text='RESET', command=self.reset_serie_button_click)
+        self.button_reset_serie.grid(row=5, column=4, padx=5, pady=7, sticky=W)
+
+        self.button_save = ttk.Button(page_timed, text='SAVE', command=self.save_timed_button_click)
+        self.button_save.grid(row=5, column=3, padx=5, pady=7, sticky=E)
+
+        self.labelFr_continuous = ttk.LabelFrame(page_timed, text='Continuous')
+        self.labelFr_continuous.grid(row=1, column=2, padx=5, pady=7, sticky='NW')
+
+        self.continuous_text = tkinter.StringVar(self.labelFr_continuous, 'START')
+        self.button_continuous = ttk.Button(self.labelFr_continuous, textvariable=self.continuous_text, command=self.continuous_button_click)
+        self.button_continuous.grid(row=3, column=1, padx=5, pady=7, sticky=W)
+        
+        self.label_interval = ttk.Label(self.labelFr_continuous, text='Interval:')
+        self.label_interval.grid(row=1, column=1, padx=5, pady=7, sticky=E)
+        
+        self.str_interval = tkinter.StringVar(self.labelFr_continuous, '1')
+        self.entry_interval = ttk.Entry(self.labelFr_continuous, textvariable=self.str_interval, width=5)
+        self.entry_interval.grid(row=1, column=2, padx=5, pady=7, sticky=W)
+        
+        self.label_ms = ttk.Label(self.labelFr_continuous, text='sec')
+        self.label_ms.grid(row=1, column=3, padx=5, pady=7, sticky=W)
+        
+        self.label_max_cnt = ttk.Label(self.labelFr_continuous, text='Max cnt:')
+        self.label_max_cnt.grid(row=2, column=1, padx=5, pady=7, sticky=E)
+
+        self.str_max_cnt = tkinter.StringVar(self.labelFr_continuous, '10')
+        self.entry_max_cnt = ttk.Entry(self.labelFr_continuous, textvariable=self.str_max_cnt, width=5)
+        self.entry_max_cnt.grid(row=2, column=2, padx=5, pady=7, sticky=W)
 
         # __init__ TAB 'SETTINGS' ************************************************************************
+        # edit: 2024-2-26
         page_set = ttk.Frame(self.notebook)
         self.notebook.add(page_set, text=' SETTINGS ', padding='5')
 
@@ -167,7 +220,7 @@ class GUI:
 
         # LED intensity control
         labelfr_set_intensity = ttk.Labelframe(page_set, text=' LED intensity (0...31)')
-        labelfr_set_intensity.grid(column=1, row=4, padx=5, pady=7, sticky=E)
+        labelfr_set_intensity.grid(column=1, row=4, padx=5, pady=7, sticky=W)
         self.str_source_int = tkinter.StringVar(page_set, '')
         self.spin_intensity = ttk.Spinbox(labelfr_set_intensity, from_= 0, to=31, width=2, validate='focusout', validatecommand=self.spin_intensity_change, textvariable=self.str_source_int)    
         if (mini_settings.hw_source_intensity >= 0 and mini_settings.hw_source_intensity <= 31):    # set correct default to begin with
@@ -179,13 +232,13 @@ class GUI:
         self.button_set_intensity = ttk.Button(labelfr_set_intensity, text=' SET ', command=self.button_set_intensity_click)
         self.button_set_intensity.grid(column=3, row=1, padx=5, pady=7)
 
-        # __init__ INTEGRATION TIME control *************************
+        # INTEGRATION TIME control *************************
         # edit 2023-12-31
         min_itime = 10   # shortest possible integration time in ms
         max_itime = 500  # longest possible
 
         labelfr_set_integration = ttk.Labelframe(page_set, text=' Integration time (ms)')
-        labelfr_set_integration.grid(row=4, column=2, padx=5, pady=7, sticky=E)
+        labelfr_set_integration.grid(row=4, column=2, padx=5, pady=7, sticky=W)
         
         self.str_itime = tkinter.StringVar(labelfr_set_integration, '')
         self.spin_itime =ttk.Spinbox(labelfr_set_integration, from_=min_itime, to=max_itime, width=3, validate='focusout', validatecommand=self.spin_itime_change, textvariable=self.str_itime)
@@ -199,20 +252,38 @@ class GUI:
         
         self.spin_itime.grid(row=1, column=1, padx=5, pady=7, sticky=E)
 
+        # __init__ TAB 'TEST' ************************************************************************
+        # edit: 2024-3-28
+        page_test = ttk.Frame(self.notebook)
+        self.notebook.add(page_test, text=' TEST ', padding='5')
+
+        labelfr_test_input = ttk.LabelFrame(page_test, text='Extern Input')
+        labelfr_test_input.grid(row=1, column=1, padx=5, pady=7)
+
+        self.button_test_input = ttk.Button(labelfr_test_input, text='CHECK', command=self.button_test_input_click)
+        self.button_test_input.grid(row=1, column=1, padx=5, pady=7)
+
+        self.str_test_input = tkinter.StringVar(page_test, ' N.A. ')
+        self.label_test_input = ttk.Label(labelfr_test_input, textvariable=self.str_test_input)
+        self.label_test_input.grid(row=1, column=2, padx=5, pady=7)
+
+        #self.LED_conn = 0
+        #self.check_LED_conn = ttk.Checkbutton(labelfr_test_input, 'Connect LED to input', command=self.check_LED_conn_changed, variable=self.LED_conn)
+
+        # ********************************************************************************************
+
         # Notebook in the root window
         #self.notebook.pack(expand=1, fill='both')
-        self.notebook.grid(column=0, row=0, sticky=(N, W, S, E))   
-    # END OF __init__ ***
+        self.notebook.grid(column=0, row=0, sticky=(N, W, S, E))
 
-    # # button_OK event handler
-    # def button_OK_click(self):
-    #     self.callback(self.input_var.get())
-    #     self.input_var.set("")
+
+
+
+    # END OF __init__ ***
 
     # button_new event handler 
     def button_new_click(self):
         self.callback('r')
-        self.responder(self.button_new_new)
         self.str_meas_source.set('New unsaved measurement in memory!')
         self.str_abs_meas_source.set('New unsaved measurement')
 
@@ -358,15 +429,7 @@ class GUI:
             messagebox.showinfo('spinbox', 'too large')
             return False
 
-        #self.spin_intensity.set(temp_value)
-        #self.str_source_int.set(str(temp_value))
-        #self.root.after(50, lambda : messagebox.showinfo('spinbox', str(temp_value)))
-        #messagebox.showinfo('spinbox', str(self.spin_intensity.get()))
         return True
-
-    # responder
-    def responder(self, button):
-        time.sleep(2)
 
     # 
     # edit : 2023-9-29
@@ -386,24 +449,106 @@ class GUI:
         self.str_fw_version.set('Firmware Version : ' + fw_version)
 
     # check and vallidate ch1_nm entry value in TIME D tab
-    # edit : 2024-1-12
-    # todo : get max & min values somewhere
-    def new_ch1_wavelength(self, *args):
+    # edit : 2024-3-20
+    # todo : get correct max & min values from somewhere
+    def new_wavelength(self, *args):
         max_nm = 890
         min_nm = 310
-        if (int(self.str_ch1_nm.get()) > max_nm):
-            self.str_ch1_nm.set(str(max_nm))
-        elif (int(self.str_ch1_nm.get()) < min_nm):
-            self.str_ch1_nm.set(str(min_nm))
+
+        for i in range(len(self.channel_list)):
+            
+            # channel list of gui items
+            #if (int(self.channel_list[i].ch_str.get()) > max_nm):
+            #    self.channel_list[i].ch_str.set(str(max_nm))
+            #elif (int(self.channel_list[i].ch_str.get()) < min_nm):
+            #    self.channel_list[i].ch_str.set(str(min_nm))
+            #myCallback('gui_timed_add_wavelength', wavelength=self.channel_list[i].ch_str.get())
+            
+            # channel list of strings only
+            if (int(self.channel_list[i].get()) > max_nm):
+                self.channel_list[i].set(str(max_nm))
+            elif (int(self.channel_list[i].get()) < min_nm):
+                self.channel_list[i].set(str(min_nm))
+            #self.callback('gui_timed_add_wavelength', wavelength=self.channel_list[i].get())
+
         return True
     
-    # edit 2024-1-11
-    # desc : Eventhandler of 'READ ONE' button, gets one reading of ch1 wavelength
-    def button_read_one_click(self):
-        self.callback('gui_one', wavelength=self.str_ch1_nm.get())
+    # edit : 2024-3-28
+    # desc : Eventhandler of 'ONCE' button, gets one reading of each selected channels.
+    def button_read_chs_click(self):
 
+        # TEST WAIT STATE
+        #self.callback('gui_input_state')
 
-# edit 2023-12-15
+        try:
+            # read first channel
+            #self.callback('gui_first_ch', wavelength=self.channel_list[0].ch_str.get())
+            self.callback('gui_first_ch', wavelength=self.channel_list[0].get())
+            # read other channels in the channel list
+            for i in range(1, len(self.channel_list)):
+                #print(self.channel_list[i].ch_str.get())
+                #self.callback('gui_another_ch', index=i, wavelength=self.channel_list[i].ch_str.get())
+                self.callback('gui_another_ch', index=i, wavelength=self.channel_list[i].get())
+            self.callback('gui_draw_timed_graph')
+
+        except Exception as e:
+            print(' ERROR in handling "READ CHs" button click!')
+            print(str(e))
+
+    # edit : 2024-3-16
+    # desc : toggle continuous measurement of selected channels
+    def continuous_button_click(self):
+
+        if(self.continuous_text.get() == 'START'):
+            self.continuousInterval = int(float(self.str_interval.get()) * 1000)
+            self.continuousCount = 0
+            self.continuousActivated = True
+            self.root.after(self.continuousInterval, self.ContinuousTimeOut)
+            self.continuous_text.set('STOP')
+
+        elif(self.continuous_text.get() == 'STOP'):
+            self.continuousActivated = False
+            self.continuous_text.set('START')
+
+        else:
+            print(' ERROR in activating continuous measurement.')
+
+    # edit : 2024-3-16
+    def ContinuousTimeOut(self):
+        #print(' Time out ')
+        if self.continuousActivated == True:
+            self.button_read_chs_click()
+            self.continuousCount = self.continuousCount + 1
+
+            # all readings are done -> stop
+            if self.continuousCount == int(self.str_max_cnt.get()):
+                self.continuousActivated = False
+                self.continuous_text.set('START')
+
+        if self.continuousActivated == True:
+            self.root.after(self.continuousInterval, self.ContinuousTimeOut)
+        
+    # edit : 2024-3-10
+    def save_timed_button_click(self):
+        time_stamp = datetime.now()
+        default_filename = time_stamp.strftime("timed %Y-%m-%d %H.%M.%S.txt")
+        save_name = filedialog.asksaveasfilename(initialfile=default_filename)
+        self.callback('gui_save_timed', filename=save_name, comment='')
+
+    # edit : 2024-1-26
+    def reset_serie_button_click(self):
+        try:
+            self.callback('gui_one_reset')
+        except Exception as e:
+            print( ' ERROR in handling "RESET SERIE" button click!')
+
+    # edit : 2024-3-28
+    # desc : Eventhandler of 'CHECK' button on TEST page
+    def button_test_input_click(self):
+        state = self.callback('gui_input_state')
+        self.str_test_input.set(state)
+
+# edit : 2023-12-15
 if __name__ == "__main__":
 
     def myCallback(callback_string):
@@ -414,3 +559,4 @@ if __name__ == "__main__":
    
     # test function cut_long_filename
     gui.cut_long_filename("long string for testing", 10)
+

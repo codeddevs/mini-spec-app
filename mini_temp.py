@@ -1,5 +1,7 @@
+# Copyright (c) 2022 Coded Devices Oy
+
 # file name : mini_temp
-# ver : 16.10.2019
+# ver : 3.6.2022
 # desc : Temperature measurement of blacbody spectrum.
 
 # func: find_maximum_l
@@ -29,14 +31,18 @@ def get_bb_temp(data):
     max_temp = calc_temp(max_lamda)
     return max_temp
 
-# ver : 20.10.2019
+# ver : 3.6.2022
 # desc: Moving average low pass filter. 
 #       Data is 2dim array containing both pos and int value.
 #
 def lowpass_filter(data):
         filt = [0.10, 0.80, 0.10]
         filt_data = []
-        int_data = [x[1] for x in data]
+        try:
+                int_data = [x[1] for x in data]
+        except TypeError:
+                print(" Wrong data type in filter input!")
+                return data # return data unchanged
                 
         if(len(data) > 3):
                 filt_data.append(int_data[0])               # first item unchanged

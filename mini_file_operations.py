@@ -1,7 +1,7 @@
-# Copyright (c) 2023 Coded Devices Oy
+# Copyright (c) 2024 Coded Devices Oy
 
 # file : mini_file_operations.py
-# edit : 2023-8-26
+# edit : 2024-3-10
 # desc : Reads and writes of the Mini Spec app
 
 import os
@@ -207,20 +207,48 @@ def create_spectra_folder(folder_name):
         os.mkdir(folder_name)
         print(" Folder " + folder_name + " created.")
 
+# edit : 2024-3-10
+# desc : timed data is 2d-array
+def WriteTimedFile(timed_data, file_name, comment=''):
+    columns = len(timed_data[0])
+    rows = len(timed_data)
+
+    # init & header
+    new_file = open(file_name, 'w')
+    new_file.write(str(comment) + '\n')
+    new_file.write('[Time Domain Values]\n')
+    for i in range(columns-1):
+        temp_str = 'Ch%i' %(i+1)
+        new_file.write(temp_str+'\t')
+    new_file.write('Time\t\n')
+
+    # data rows
+    for i in range(rows):
+        for j in range(columns):
+            new_file.write(str(timed_data[i][j]) + '\t')
+        new_file.write('\n')
+
+    # end & close
+    new_file.write('[end]\n')
+    new_file.close()
+
+    return 1
+
 
 # unit test main
-# ver 9.10.2020
+# edit : 2024-3-6
 #
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    data = []
-    data = read_tab_data_file("CIE_illuminannts.txt", 7)
-    #data=read_CIE_file('CIE_ill_test.txt')	
-    x_data = [x[1] for x in data]
-    y_data = [x[2] for x in data]
-    z_data = [x[3] for x in data]
-    wavelength_data = [x[0] for x in data]
-    plt.plot(wavelength_data, x_data)
-    plt.plot(wavelength_data, y_data)
-    plt.plot(wavelength_data, z_data)
-    plt.show()
+    
+    # test writing timed data into a file
+    myData = []
+    myData.append([10.32, 12, 11, 8.945])
+    myData.append([12, 11, 10, 11.229])
+    myData.append([-1, 12, 0, 12.00])
+    WriteTimedFile(myData, 'test.txt')
+
+
+    
+
+
+

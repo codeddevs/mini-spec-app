@@ -1,18 +1,20 @@
-# Copyright (c) 2023 Coded Devices Oy
+# Copyright (c) 2024 Coded Devices Oy
 
 # file name : mini_instrument.py
-# ver : 2023-8-25
+# ver : 2024-3-27
 # desc: Defines instrument class which controls Mini Spectrometer hardware via 
 #       serial communication.
 
 # Firmware command set (edited 2022-5-6):
-# 'S' read a single pre set channel
-# 'A' read all channels
+# 'S' read a spectrum and send a single pre selected channel
+# 'G' send a single pre selected channel from already measured spectrum
+# 'A' read a spectrum and send all channels
 # 'L' flash LED pre set number of times
 # 'I' set one step higher integration time (after max value returns to min value).
 # 'R' reset instrument
 # 'V' read instrument firmware version
 # 'H' set intensity value of the source
+# 'W' activate wait state
 # '0'...'9' four numbers are captured to be later used with commands 'L', 'H', 'S'
 
 import serial
@@ -62,7 +64,8 @@ class mini_instrument:
     
     # method : getFirmwareVer
     # ver : 8.4.2022
-    # desc : Print to therminal the version number of the instrument firmware. 
+    # desc : Print to therminal the version number of the instrument firmware.
+    #        Not called by GUI but only command line main. 
     def printFirmwareVersion(self):
 
         try:
@@ -89,6 +92,37 @@ class mini_instrument:
             print(str(verr))
         except Exception as e:
             print(str(e))
+    
+    # return str instead of printing
+    # edit 2023-12-30
+    def getFirmwareVersion(self):
+        try:
+            self.myPort.flush()
+            self.myPort.write(b'V')
+            
+            time.sleep(0.1)
+            line_1 = self.myPort.readline().strip().decode("ascii") # catch extra line change ??  
+            
+            time.sleep(0.1)
+            line_2 = self.myPort.readline().strip().decode("ascii") # read the returned command 'V'
+                    
+            time.sleep(0.1)
+            line_3 = self.myPort.readline().strip().decode("ascii") # read the version data
+
+            str_fw_version = ''
+            for i in range(len(line_3)-1):
+                str_fw_version = str_fw_version + str(line_3[i] + ".")
+            str_fw_version = str_fw_version + str(line_3[len(line_3)-1])
+                
+        except serial.SerialException as serr:
+            print(str(serr))
+        except ValueError as verr:
+            print(str(verr))
+            print(" Consider adding reset call into getFirmwareVersion method!")
+        except Exception as e:
+            print(str(e))
+    
+        return str_fw_version
         
     # method : getrandomValue
     # ver : 2.1.2019
@@ -113,9 +147,9 @@ class mini_instrument:
             time.sleep(0.1)                 # sleep for 0.1 sec
             channel_count = 0;              # 4.6.2021       
 
-            #first input line repeats the command 'R'
+            #first input line repeats the command 'A'
             line = self.myPort.readline().strip().decode("ascii")
-                    
+                               
             #second input line tells number of channels, example b'0288'
             try:
                 line = self.myPort.readline().strip()   # remove '\n'
@@ -177,38 +211,74 @@ class mini_instrument:
             print(" ERROR: No connection to the instrument!")
             return 0
 
-        # method : getOneChannel
-        # ver    : 2023-5-5
-        # desc   : Get reading of one pre selected channel. 
-        #          Sends the channel number (1...288) to instrument just before requesting the reading.
-        def getOneChannel(self, ch_number):
+    # method : GetFirstChannel
+    # ver    : 2024-3-16
+    # desc   : Get reading of one pre selected channel. 
+    #          Sends the channel number (1...288) to instrument just before requesting the reading.
+    #          Short sleep values are essential to reliability of the operation.    
+    def GetFirstChannel(self, ch_number):
+
+        delay = 0.05
+
+        if (self.myPort.is_open == False):
+            print(' ERROR : no connection to hardware, port is not open!')
+            print(' ERROR in sending "S" command to the uc!')
+            #return(-1, -1)
+            #print(' Random values for testing!')
+            return(ch_number, self.getRandomValue())
             
-            try:
-                for x in str(ch_number):
-                    self.myPort.write(x.encode())   # encodes text to bytes using UTF-8 (partly compatible with ASCII)
-                    time.sleep(0.1)                 # importance of correct intendation ;)    
-            except Exception as x:
-                print(x)
-                    
-            self.myPort.write(b'S')         # request for spectrum
-            time.sleep(0.1)                 # sleep for 0.1 sec
-
-            # first input line echoes the command 'S'
-            try:
-                line = self.myPort.readline().strip().decode("ascii")
-                print(line)
-            except ValueError as verr:
-                print(str(verr))
-
-            # second input line tells the number of the selected channel and its value
-            try:
-                line = self.myPort.readline().strip() # remove '\n'
-                [channel, value] = line.split()
-                print('channel number: %i' %int(channel))
-                print('channel value : %i' %int(value))       
-            except ValueError as verr:
-                print(str(verr))
+        try:
+            for x in str(ch_number):
+                self.myPort.write(x.encode())   # encodes text to bytes using UTF-8 (partly compatible with ASCII)
+                time.sleep(delay)               # importance of correct intendation ;)
+            self.myPort.write(b'S')             # request for spectrum
+            time.sleep(delay)                   # sleep for 0.1 sec
+            line = self.myPort.readline().strip().decode("ascii")   # read the echo 'S'
+            #time.sleep(delay)
+            #print('command echo: ' + line)
+        except Exception as x:
+            print(' ERROR in sending "S" command to the uc!')
+                
+        try:
+            line = self.myPort.readline().strip() # read the ch nr and its value, remove '\n'
+            [channel, value] = line.split()
+            #print('channel number: %i' %int(channel))
+            #print('channel value : %i' %int(value))
+            return(channel, value)       
+        except Exception as e:
+            print(' ERROR in receiving the Channel Number and its Value after command "S"!')
+            #return(-1, -1)
+            #print(' Lets use random values for testing!')
+            #return(ch_number, self.getRandomValue())
         
+    # method : GetAnotherChannel
+    # edit   : 2024-3-16
+    # desc   : Get value of a predefined channel from already measured spectrum still in the memory of the
+    #          micro controller (usually a reference channel value of the same measurement as one 
+    #          received by calling getOneChannel method).    
+    def GetAnotherChannel(self, ch_number):
+
+        delay = 0.05
+        
+        # send the number of a channel & command 'G'         
+        try:
+            for x in str(ch_number):
+                self.myPort.write(x.encode())   # encodes text to bytes using UTF-8 (partly compatible with ASCII)
+                time.sleep(delay)                 # importance of correct intendation ;)
+            self.myPort.write(b'G')             # request another channel from the already measured spectrum
+            time.sleep(delay)
+            line = self.myPort.readline().strip().decode("ascii")   # read the echo 'G'
+        except Exception as e:
+            print(' ERROR in sending "G" command to the uc!')
+            
+        # read the response for the command 'G'
+        try:
+            line = self.myPort.readline().strip() # read the ch nr and its value, remove '\n'
+            [channel, value] = line.split()
+            return(channel, value)
+        # real values not possible --> send a random value        
+        except Exception as e:
+            return(ch_number, self.getRandomValue())
 
     # method : setSourceIntensity
     # ver    : 22.4.2022
@@ -236,24 +306,31 @@ class mini_instrument:
         except serial.SerialException:
             print("Error in using serial port!")
             
-
-    # method : setIntegrationTime
-    # ver    : 12.3.2020
-    # desc   : Write char I to com port to increase integration time one step i.e 10 units.
-    #          Read return value of the new integration time.
-    #
-    def setIntegrationTime(self):
-        self.myPort.write(b'I')
-        time.sleep(0.1)
-        line = self.myPort.readline() # read the returned command 'I'
-        time.sleep(0.1)
-        line = self.myPort.readline().strip().decode("ascii") # read new time value
+   
+    # edit : 2023-12-30
+    # desc : give time in ms units using int type
+    #        when ready and tested replace current setIntegrationTime method
+    #        Works with firmware version 1.0.1.0 or later
+    def setIntegrationTime(self, itime):
         try:
-            newTime = int(line)
-        except ValueError as verr:
-            print(str(verr))
-        return newTime * mini_settings.hw_time_to_ms # time in ms
+            for x in str(itime):
+                self.myPort.write(x.encode()) # encodes text to bytes using UTF-8 (partly compatible with ASCII)
+                time.sleep(0.1)                 
+            self.myPort.readline() # read the returned command 'x' 
+            self.myPort.write(b'I')
+            time.sleep(0.1)
+            line = self.myPort.readline()
+            time.sleep(0.1)
+            line = self.myPort.readline().strip().decode("ascii") # read new time
+            try:
+                itime = int(line)
+                return itime
+            except ValueError as verr:
+                print(str(verr))
 
+        except serial.SerialException:
+            print("Error in using serial port!")
+            
 
     # method : blink_LED
     # ver : 5.1.2021
@@ -272,6 +349,20 @@ class mini_instrument:
             print("Error in opening serial port!")
         except Exception as x:
             print(x)
+
+    # edit : 2024-3-28
+    # desc : Ask the current state of the external input pin (RA2).
+    def AskInputState(self):
+        try:
+            self.myPort.write(b'W')
+            time.sleep(0.1)
+            line = self.myPort.readline().strip().decode("ascii")   # read the echo 'W' and the state
+            #print(line)
+            return line
+        except Exception as e:
+            print(e)
+            return -1
+            
 
     # method : clearInputBuffer
     # edit : 2023-5-5

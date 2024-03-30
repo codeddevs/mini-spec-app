@@ -1,12 +1,11 @@
 # Copyright (c) 2023 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2023-9-8
+# ver : 2023-12-15
 # desc : mini_data class for data handling and presentation operations.
 #		 
-# TODO : * Complete drawPointValue method
-#        * Add conversion from a wave length to a channel    
-    
+# TODO : * Complete drawPointValue method 
+
 import matplotlib.pyplot as plt
 import mini_settings
 import mini_file_operations as fop
@@ -15,6 +14,7 @@ import mini_temp
 
 class mini_data:
         
+    # edit 2023-12-15
     def __init__ (self):
         self.data = []              # Warning! data array can contain modified data, ch numbers or wavelengths.
         self.background = []        # Refrence background signal that can be subtracted from measurement. 
@@ -25,6 +25,7 @@ class mini_data:
         self.absorption = []        # absorption spectrum = zero_reference - data through material
         self.rel_absorption = []    # relative absoprtion spectrum = (zero_reference - sample) / zero_reference * 100
         self.data_file_name = ""    # include in plots
+        self.added_to_average = False   # result already added to average spectrum
 
 
     # method : channelToWavelength
@@ -219,10 +220,14 @@ class mini_data:
         plt.show()
 
     # method : ClearLineSpectrum
-    # edit : 2023-9-22
+    # edit : 2023-12-15
     def ClearLineSpectrum(self):
-        if plt.fignum_exists('ABSOLUTE GRAPH'): 
-            plt.close('ABSOLUTE GRAPH')
+        if plt.fignum_exists('ABSOLUTE GRAPH'):
+            plt.clf() 
+            plt.xlabel("wavelength [nm]")
+            plt.ylabel("intensity [bit]")
+            plt.grid(True)
+            #plt.close('ABSOLUTE GRAPH')
             #print(' Absolute graph closed!')
         else:
             print(' No absolute graph to clear.')
@@ -242,7 +247,7 @@ class mini_data:
         plt.show()             
 
 	# method : addToAverage
-	# ver : 2023-9-8
+	# ver : 2023-12-15
 	# desc : Add new spectrum to average.
     def addSpectrumToAverage(self):
 
@@ -258,6 +263,7 @@ class mini_data:
             elif self.ave_size > 1:
                 for i in range(0, len(self.data)):
                     self.average[i][1] = self.data[i][1] / self.ave_size + (self.ave_size - 1) / self.ave_size * self.average[i][1]
+            self.added_to_average = True # set to false when new a reading is received
 
 	# method : drawLineAverage
 	# ver : 2023-9-8
@@ -558,7 +564,15 @@ class mini_data:
     def multiply(self, gain):
         for i in range(0, len(self.data)):
             self.data[i][1] = self.data[i][1] * gain
-        
+
+    # edit : 2024-1-19
+    def CloseGraphs(self):
+
+        if plt.fignum_exists('RELATIVE GRAPH'):
+            plt.close('RELATIVE GRAPH')
+
+        if plt.fignum_exists('ABSOLUTE GRAPH'):
+            plt.close('ABSOLUTE GRAPH')
         
 
 # unit test main
