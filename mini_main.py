@@ -1,7 +1,7 @@
-# Copyright (c) 2024 Coded Devices Oy
+# Copyright (c) 2025 Coded Devices Oy
 #
 # file : mini_main.py
-# ver  : 2024-3-30
+# ver  : 2025-2-14
 # desc : Main file of the Mini Spectormeter Python3 application.
 #	 	 Communication with the hardware via FTDI VCP drivers.
 # TODO : - Correct intensity calibration so that highest point of the spectrum
@@ -27,11 +27,11 @@ import tkinter as tk
 
 # VERSION
 # UPDATE THE VERSION NUMBER/DATE ONLY HERE
-app_version = "2024-3-28"
+app_version = "2025-2-16"
 
 class MainApp:
     
-    # edit 2024-3-15
+    # edit 2025-2-16
     def __init__(self):
         
         self.myData = mini_data()               # spectrum data
@@ -44,20 +44,50 @@ class MainApp:
         # Print Start info
         print("")
         print(" *** Mini Spec *** ")
-        print(" Copyright (c) 2024 Coded Devices Oy")
+        print(" Copyright (c) 2025 Coded Devices Oy")
         print(" PC Software version " + app_version)
         print(" Connecting to hardware...")
         print("")
 
         # Connect to the instrument
-        # edit : 2023-12-27
+        # edit : 2025-2-16
+        # desc : Connect to the instrument. Then 
+        #        1) read back firmware version,
+        #        2) read LED intensity from the settings file and send it to the instrument,
+        #        3) read integration time from the settings file and send it to the instrument.  
+        # todo : Separate error in returned LED value from old firmware not returning it.
         connected = self.myInstrument.openPort()
         if connected is True:
+
+            # BLINK LED
             self.myInstrument.blink(2)
+            
+            # INIT FIRMWARE VERSION
             fw_version = self.myInstrument.getFirmwareVersion()
             print(" Firmware version : " + fw_version)
-            self.myInstrument.setSourceIntensity(settings.hw_source_intensity)
-            print(" Source intensity : " + str(settings.hw_source_intensity))
+
+            # INIT LED INTENSITY
+            LEDi = fop.read_LED_intensity()
+            if (LEDi < 0 or LEDi > 31):
+                LEDi = settings.hw_source_intensity
+            new_LEDi = self.myInstrument.setSourceIntensity(LEDi)
+            # requested LED intensity (but not returned because of old fw version or error)
+            if (new_LEDi == -1):
+                print(f' LED intensity : {LEDi}')
+            # returned LED intensity
+            else:
+                print(f' LED intensity : {new_LEDi}')
+
+            # INIT INTEGRATION TIME
+            iTime = fop.read_integ_time()
+            if (iTime < 10 or iTime > 500):
+                iTime = settings.hw_integration_time
+            new_iTime = self.myInstrument.setIntegrationTime(iTime)
+            if(new_iTime != iTime):
+                print(f' ERROR in setting integration time!')
+            else:
+                print(f' Integration time : {new_iTime} ms')
+
         else:
             fw_version = 'N.A.'
 
@@ -69,7 +99,11 @@ class MainApp:
         self.gui = mini_gui.GUI(self.root, self.GUI_callback)
         self.gui.update_version(app_version, fw_version)
         self.root.protocol('WM_DELETE_WINDOW', self.exit_app)
+        print(f" Ready!")
+        print('')
         self.root.mainloop()
+
+       
     
     # CLOSE APP
     # edit : 2024-3-28
@@ -129,18 +163,30 @@ class MainApp:
             print("q : quit")
         
         # INTEGRATION TIME W GUI
-        # edit : 2023-12-29
+        # edit : 2025-2-16
         elif inputCommand == 'gui_itime':
             print(' Change integration time')
             if 'time' in kwargs:
                 itime = kwargs['time']
+
+                # save to file
+                try:
+                    fop.save_integ_time(itime)
+                except FileNotFoundError:
+                    print(f' Error in saving integration time!')             
+                
+                # send to instrument
                 try:
                     new_itime = self.myInstrument.setIntegrationTime(itime)
-                    print(" New integration time set : " + str(new_itime) + " ms")
+                    if new_itime != itime:
+                        print(" Error in reading back the new integration time value!")
+                    else:         
+                        print(f" Integration time set : {new_itime} ms")
                 except ValueError:
-                    print(" Error : Incorrect time!")
+                    print(" Error : Incorrect integration time!")
+
             else:
-                print(" Error : No time!")
+                print(" Error : No integration time!")
 
         # READ FULL SPECTRUM (ALL CHANNELS)
         # edit : 2023-12-15
@@ -181,9 +227,11 @@ class MainApp:
         #        Note! Does not work in VSCode environment.
         # todo : Select proper data type for returned spectrum (data or rel_absoption).
         #        Test if deepcopy is required.
+        #        Error in drawing the spectrum may cause exception with misleading 
+        #        print "Wrong file name or file type!"
         #        
         elif inputCommand == 'l':
-            print("Load from file")
+            print(" Load from file")
             file_name = kwargs['filename']
             print(file_name)
             #file_name = input("File name in folder " + settings.my_spectra_folder + " ?: ")
@@ -410,7 +458,7 @@ class MainApp:
 
             wave_length = int(kwargs['wavelength'])
             ch_number = self.myData.waveLengthToChannel(wave_length)
- 
+             
             if(ch_number < 1):
                 print(' ERROR: ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
             elif (ch_number > settings.hw_channel_count):
@@ -439,7 +487,7 @@ class MainApp:
             wave_length = int(kwargs['wavelength'])
             ch_index = int(kwargs['index'])
             ch_number = self.myData.waveLengthToChannel(wave_length)
-
+            
             if(ch_index < 0 or ch_index > self.myMultiTimedData.ch_count):
                 print(' ERROR: Channel index outside of expected range 0...%i!' %self.myMultiTimedData.ch_count)
 
@@ -509,19 +557,35 @@ class MainApp:
             self.myMultiTimedData.CloseTimedGraph()
             self.myMultiTimedData.ClearTimedData()
 
-        # CHANGE SOURCE INTENSITY VIA GUI
-        # edit : 2023-9-15
+        # CHANGE SOURCE (LED) INTENSITY VIA GUI
+        # edit : 2025-2-16
+        # desc : Save the new LED value in to the settings file, then send it to the instrument.
         elif inputCommand == 'gui_int':
             print(' Change LED intensity')
             if 'led_intensity' in kwargs:
                 LED_int = kwargs['led_intensity']
-                print(' New LED intensity = ' + str(LED_int))
+                # save to file
                 try:
-                    self.myInstrument.setSourceIntensity(LED_int)
+                    fop.save_LED_intensity(LED_int)
+                except FileNotFoundError:
+                    print(f' Error in saving LED setting!')             
+                # send to instrument
+                try:
+                    new_LED_int = self.myInstrument.setSourceIntensity(LED_int)
+                    # old firmware does not return the set value, -1 instead
+                    if new_LED_int == -1:
+                        print(f" LED intensity set : {LED_int}")
+                    # new firmware does return the set value
+                    elif new_LED_int == LED_int:         
+                        print(f" LED intensity set : {new_LED_int}")
+                    # unexpected value 
+                    else:
+                        print(f" ERROR in reading back the new LED intensity value : {new_LED_int}!")
+                
                 except ValueError:
-                    print(" Error : Incorrect intensity value!")
+                    print(" Error : Incorrect LED intensity value!")
             else:
-                print(" Error : No LED instensity value!")
+                print(" Error : No new LED instensity value defined!")
             
         # CHANGE SOURCE INTENSITY
         # ver 29.4.2022
@@ -547,7 +611,7 @@ class MainApp:
         # DRAW SPECTRUM IN MEMORY
         # ver 29.5.2022
         elif inputCommand == 'ds':
-            print("Draw spectrum in memory")
+            print(" Draw spectrum in memory")
             if(len(self.myData.data) > 1):
                 self.myData.drawLineSpectrum()
             else:

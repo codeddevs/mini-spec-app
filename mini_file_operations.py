@@ -1,11 +1,26 @@
-# Copyright (c) 2024 Coded Devices Oy
+# Copyright (c) 2025 Coded Devices Oy
 
 # file : mini_file_operations.py
-# edit : 2024-3-10
+# edit : 2025-1-25
 # desc : Reads and writes of the Mini Spec app
+# TODO : After reading the reference file name from the saved settings,
+#        then test that this filepath still points to a usable data.
 
 import os
 import pickle
+import mini_settings
+
+# 2025-1-23
+# dictionary data type for all settings to be saved (serialized) between sessions
+settings_dic = {
+    "zero_path" : '',
+    "LED_int" : mini_settings.hw_source_intensity,
+    "integ_time" : mini_settings.hw_integration_time
+    }
+
+# filepath for user settings binary file containing values for
+# zero reference filepath, LED intensity and integration time.
+settings_fp = 'my_settings.txt'
 
 # func : read_file
 # rev. : 29.5.2022
@@ -61,31 +76,77 @@ def read_file(fileName):
     file.close()
     return data, unit
 
-# func : save_zero_path
-# edit : 2023-8-26
-# desc : Use pickle module to save the previous zero reference file path into settings file
-#        my_settings.txt.
-def save_zero_path(zero_file):
-     try:
-          settings_file = open('my_settings.txt', 'wb')
-          pickle.dump(zero_file, settings_file)
-          settings_file.close()
-
-     except FileNotFoundError:
-          print("Error in writing to file my_settings.txt.")
-
-# func : read_zero_path
-# edit : 2023-8-26
-# desc : Use pickle module to read the previous zero reference file path
-def read_zero_path():
+# edit : 2025-2-15
+# desc : Common saving function for user settings.
+#        Use pickle to save settings_dic dictionary to a binary file my_settings.txt.
+#        Overwrite the existing file. 
+def save_settings():
+    global settings_dic
     try:
-          settings_file = open('my_settings.txt', 'rb')
-          zero_file = pickle.load(settings_file)
-          settings_file.close()
-          return zero_file
-    
+        with open(settings_fp, 'wb') as settings_file:
+            pickle.dump(settings_dic, settings_file)
+    except Exception as e:
+        print(f"Error writing to file {settings_fp}: {e}")
+
+# edit : 2025-1-25
+# desc : Common loading function for all user settings.
+#        Use pickle to load the saved settings_dic dictionary from binary file my_settings.txt.
+#        Return 1 if file was found 0 if not.
+def load_settings(print_warnings):
+    global settings_dic
+    try:
+        with open(settings_fp, 'rb') as settings_file:
+            settings_dic = pickle.load(settings_file)
+        return 1 # file OK
     except FileNotFoundError:
-         print("Error in reading from file my_settings.txt")
+        if print_warnings == True:
+            print(f" Settings file {settings_fp} was not found.") 
+            print(f" But don't worry, it will be created next time a setting is saved.")
+        return 0 # reading failed
+    except Exception as e:
+        if print_warnings == True:
+            print(f" Error reading from file {settings_fp}: {e}")  
+        return 0 # reading failed
+    
+# edit : 2025-2-15
+# desc : Update the filepath of the zero reference file in dictionary settings_dic["zero_path"], then save the dictionary.
+def save_zero_path(file_path):
+    global settings_dic
+    settings_dic["zero_path"] = file_path
+    save_settings()
+             
+# edit : 2025-2-15
+# desc : Update the LED intensity value in dictionary settings_dic["LED_int"], then save the dictionary.
+def save_LED_intensity(LEDi):
+    global settings_dic # global necessary when modifying the content
+    settings_dic['LED_int'] = LEDi
+    save_settings()
+
+# edit : 2025-2-15
+# desc : Update the sensor integration time in dictionary settings_dic["integ_time"], then save the dictionary. 
+def save_integ_time(i_time):
+     global settings_dic
+     settings_dic['integ_time'] = i_time
+     save_settings()
+
+# edit 2025-2-15
+# desc : Load dictionary settings_dic from file my_settings.txt and return the path of zero reference file.
+def read_zero_path(print_warnings = False):
+    load_settings(print_warnings)
+    return settings_dic.get('zero_path', '')
+
+# edit 2025-2-15
+# desc : Load dictionary settings_dic from file my_settings.txt and return the LED itensity value.
+def read_LED_intensity(print_warnings = False):
+    load_settings(print_warnings)
+    return settings_dic.get('LED_int', mini_settings.hw_source_intensity)
+
+# edit 2025-2-15
+# desc : Load sictionary settings_dic from file my_settings.txt and return the sensor integration time value.
+def read_integ_time(print_warnings = False):
+    load_settings(print_warnings)
+    return settings_dic.get('integ_time', mini_settings.hw_integration_time)
+
 
 
 # func : read_CIE_file
@@ -236,19 +297,25 @@ def WriteTimedFile(timed_data, file_name, comment=''):
 
 
 # unit test main
-# edit : 2024-3-6
+# edit : 2025-1-25
 #
 if __name__ == '__main__':
     
-    # test writing timed data into a file
-    myData = []
-    myData.append([10.32, 12, 11, 8.945])
-    myData.append([12, 11, 10, 11.229])
-    myData.append([-1, 12, 0, 12.00])
-    WriteTimedFile(myData, 'test.txt')
+    # test writing settings to a binary file 'my_settings.txt'
 
+    #save_integ_time(21)
+    #print(read_integ_time())
 
+    # test zero reference file path read & save
+    print('loaded:')
+    print(read_zero_path())
+    print('next saving')
+    save_zero_path('c:\\')
     
+    # test LED intensity
+    print(read_LED_intensity())
+    save_LED_intensity(9)
+    print(read_LED_intensity())
 
 
 

@@ -1,5 +1,5 @@
-# Copyright (c) 2024 Coded Devices Oy
-# edit : 2024-3-17
+# Copyright (c) 2025 Coded Devices Oy
+# edit : 2025-1-17
 # desc : Class for timeseries of multiple channel values.
 import time
 import matplotlib.pyplot as plt
@@ -22,14 +22,12 @@ class mini_timed_multi_data:
             print(' ERROR, incorrect number of timed channels! Now set to 3.')
             self.ch_count = 3
                                         # affects the data array size
-        self.ts_count = 0               # increase after adding a new timestamp (row)
+        self.ts_count = 0               # number of time stamps in memory, increase after adding a new timestamp (row)
         self.startTime = 0              # timestamp value of the first datarow
 
     # edit : 2024-3-20
-    # desc : Wavelength of a channel can change afterwards.
-    # todo : Remove existing channel wavelength if same index.
+    # desc : Set the wavelength of a channel.
     def AddChWavelength(self, ch_index, ch_wavelength):
-
         try:
             self.ChWavelength[ch_index] = ch_wavelength
                 
@@ -38,10 +36,12 @@ class mini_timed_multi_data:
 
     # edit : 2024-3-20
     def PrintWavelengths(self):
-        print(' wavelengths: ', end=' ')
+        print('')
+        print(' Measuring selected channels...')
+        print(' Wavelengths: ', end=' ')
         for i in range(len(self.ChWavelength)):
             print(str(self.ChWavelength[i]), end= ' ')
-        print('')
+        print('nm')
 
 
     # edit : 2024-3-10
@@ -87,8 +87,8 @@ class mini_timed_multi_data:
         try:
             if self.ts_count > 0:
                 if self.ts_count == 1:
-                    print(' New channel values & time stamp:')
-                print(' Row nr ' + str(self.ts_count) + ' : ' + str(self.timed_data[self.ts_count - 1]))
+                    print(' Intensities & time stamp (sec):')
+                print(' # ' + str(self.ts_count) + ' : ' + str(self.timed_data[self.ts_count - 1]))
         except:
             print(' ERROR in printing the last row of the timed array!')
 
@@ -99,9 +99,9 @@ class mini_timed_multi_data:
         self.ts_count = 0
         self.startTime = 0
 
-    # edit : 2024-3-28
+    # edit : 2025-2-16
     # desc : Input parameter b defines if the graph blocks the progress of the program.
-    #  
+    # todo : Check if there is any benefit of using interactive mode plt.ion() 
     def DrawTimedGraph(self, b=False):
 
         if self.ts_count == 1:
@@ -110,6 +110,7 @@ class mini_timed_multi_data:
         plot_styles = ['-*b', '-og', '-xr', '-+y', '-#m']
 
         plt.figure("TIME DOMAIN VALUES")
+        plt.ion() # added 2025-2-16
         plt.grid(True)
         plt.xlabel("Time [s]")
         plt.ylabel("Intensity [bit]")
@@ -125,10 +126,10 @@ class mini_timed_multi_data:
         plt.legend(legends)   
         plt.show(block=b)
 
-    # edit : 2024-2-11
+    # edit : 2025-2-16
     def CloseTimedGraph(self):
         if plt.fignum_exists('TIME DOMAIN VALUES'):
-            plt.close()
+            plt.close('TIME DOMAIN VALUES')
 
 
     # edit : 2024-2-9

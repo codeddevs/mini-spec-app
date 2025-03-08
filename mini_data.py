@@ -1,7 +1,7 @@
-# Copyright (c) 2023 Coded Devices Oy
+# Copyright (c) 2025 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2023-12-15
+# ver : 2025-2-15
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
@@ -37,7 +37,7 @@ class mini_data:
     #        Notice! channel = 0 gives nonsense.    
 	#
     def channelToWavelength(self):
-        for i in range(0,len(self.data)):
+        for i in range(len(self.data)):
             x = self.data[i][0]
             self.data[i][0] = int(mini_settings.calib_a0 \
                                 + x * mini_settings.calib_b1 \
@@ -48,7 +48,7 @@ class mini_data:
                                 + 0.5)
 
     # method : waveLengthToChannel
-    # ver : 29.4.2022
+    # ver : 2025-2-8
     # desc : Convert a wave length to a channel number (1...288)
     #        Returns a channel number, not channel index!
     #        Returns channel number zero if wevelength is shorter than can be actually measured,
@@ -60,7 +60,7 @@ class mini_data:
         min_diff = 890 - 310
         min_diff_channel = 0
                  
-        for i in range(0, mini_settings.hw_channel_count + 2):
+        for i in range(1, mini_settings.hw_channel_count + 1):
             w = int(mini_settings.calib_a0 \
                 + i * mini_settings.calib_b1 \
                 + i**2 * mini_settings.calib_b2 \
@@ -76,8 +76,8 @@ class mini_data:
                 min_diff_channel = i
 
         # warn if incorrect channel number is about to be returned    
-        if min_diff_channel < 1 or min_diff_channel > mini_settings.hw_channel_count:
-            print(" Incorrect value in wavelength !")             
+        #if min_diff_channel < 1 or min_diff_channel > mini_settings.hw_channel_count:
+        #    print(" Incorrect value in wavelength !")             
             
         return min_diff_channel
     
@@ -194,7 +194,7 @@ class mini_data:
         plt.show()
 
 	# method : drawLineSpectrum
-	# ver : 2023-9-22
+	# ver : 2025-2-15
 	# desc : Simple line spectrum
 	#        Draw absolute spectrums into figure "ABSOLUTE GRAPH"
     #        This name identifies the graph instead of ID number.   
@@ -205,19 +205,35 @@ class mini_data:
         plt.ion()   # interactive mode on
         plt.plot(ch_data, int_data)
 
-        xmin, xmax, ymin, ymax = plt.axis() # get current axis values
-        try:
-            if(ymax < max(int_data)*1.1):    
-                plt.ylim(0, max(int_data)*1.1)
+        ax = plt.gca() # get axis object
+        ymin, ymax = ax.get_ylim()
+        xmin, xmax = ax.get_xlim()
+
+        x_axis_range = xmax - xmin
+        x_data_range = max(ch_data) - min(ch_data)
+
+        # Following handles two special cases:
+        # 1. Second spectrum is being drawn into the same plot but it has higher max value.
+        # 2. If a plot becomes redrawn in its zoomed state, we want to maintain the zoom.
+        try: 
+            if(ymax < int(max(int_data) * 1.1) and x_axis_range > int(x_data_range * 1.1)):
+                ax.set_ylim(0, int(max(int_data) * 1.1))
         except ValueError:
-            print(" Error: Incorrect value in data file!")
+            print(" Error: Scaling of the plot failed!")
 
         plt.suptitle("" + self.data_file_name)
         plt.xlabel("wavelength [nm]")
         plt.ylabel("intensity [bit]")
         plt.grid(True)
-        #plt.draw() #use draw() instead of show() when interactive mode is on 
         plt.show()
+
+    # edit : 2025-2-15
+    # desc : Returns true if the plot is currently zoomed.
+    def isZoomed(self, y_default, x_default):
+        #fig, ax = plt.figure("ABSOLUTE GRAPH")
+        #if(y_default != ax.get_ylim()):
+            print(' Zoomed Y')
+
 
     # method : ClearLineSpectrum
     # edit : 2023-12-15
@@ -576,7 +592,7 @@ class mini_data:
         
 
 # unit test main
-# ver 26.5.2022
+# ver 2025-2-8
 #
 if __name__ == '__main__':
 
@@ -585,27 +601,24 @@ if __name__ == '__main__':
     # TEST WAVE LENGTH <--> CHANNEL CONVERSION
     if True:
 
-        #print(myData.waveLengthToChannel(311)) #  311 nm <--> ch 0 (not real!)
         print("channels:")    
-        print(myData.waveLengthToChannel(313)) #  313 nm <--> ch 1
-        print(myData.waveLengthToChannel(316)) #  315 nm <--> ch 2
-        print(myData.waveLengthToChannel(451)) #  451 nm <--> ch 54
-        print(myData.waveLengthToChannel(882)) #  882 nm <--> ch 288 
-        
-        myData.data.append([1, 721])
-        myData.data.append([2, 711])
-        myData.data.append([54, 650])
-        myData.data.append([288, 122])
+        print(myData.waveLengthToChannel(313)) #  1
+        print(myData.waveLengthToChannel(316)) #  2
+        print(myData.waveLengthToChannel(882)) #  288
+                
+        myData.data.append([myData.waveLengthToChannel(313), 721])
+        myData.data.append([myData.waveLengthToChannel(316), 711])
+        myData.data.append([myData.waveLengthToChannel(882), 650])
+
         myData.channelToWavelength()
 
         print("wavelengths:")    
         print(myData.data[0][0])
         print(myData.data[1][0])
         print(myData.data[2][0])
-        print(myData.data[3][0])
-
+       
     # TEST RELATIVE ABSORPTION
-    if True:
+    if False:
 
         print("Load from file")
         file_name = input("File name in folder " + mini_settings.my_spectra_folder + " ?: ")

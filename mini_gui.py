@@ -1,7 +1,7 @@
-# Copyright (c) 2024 Coded Devices Oy
+# Copyright (c) 2025 Coded Devices Oy
 
 # Mini Spec App GUI
-# edit 2024-3-28
+# edit 2025-1-17
 # todo : 
 
 import tkinter
@@ -13,14 +13,15 @@ import time
 import threading
 from datetime import datetime
 
-
+import importlib
 import mini_settings
 import mini_file_operations as fop
 
 
-# edit : 2024-3-28
+# edit : 2025-2-15
 class GUI:
     
+    #edit : 2025-1-17
     def __init__(self, root, callback):
 
         self.callback = callback
@@ -38,9 +39,18 @@ class GUI:
         self.my_style = ttk.Style()
         #self.my_style.theme_use('winnative') # 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
         self.my_style.theme_use('default') # 'winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
-                                
-        # TAB 'MEAS' for brinning measurements **********************************************
-        # edit : 2023-9-15
+
+        self._initialize_tab_MEAS()
+        self._initialize_tab_ABSORP()
+        self._initialize_tab_TIMED()                       
+        self._initialize_tab_SETTINGS()
+        self._initialize_tab_TEST()
+    # END OF __init__ ***
+        
+    # TAB 'MEAS' for making and loading measurements
+    # edit : 2023-9-15
+    def _initialize_tab_MEAS(self):
+    
         page_meas = ttk.Frame(self.notebook, padding='5')
         page_meas.grid(column=0, row=0, sticky=(N, W, E, S))    # fill grid cell
         
@@ -71,8 +81,10 @@ class GUI:
 
         self.notebook.add(page_meas, text=' MEAS ')
 
-        # TAB 'ABSORPTION' ********************************************************************
-        # edit : 2024-2-26
+    # TAB 'ABSORP' for calculating absoption spectra
+    # edit : 2024-2-26
+    def _initialize_tab_ABSORP(self):
+        
 
         page_abs = ttk.Frame(self.notebook, padding='5')
         self.notebook.add(page_abs, text=' ABSORP ')
@@ -96,16 +108,17 @@ class GUI:
         label_meas_source.grid(column=2, row=3, padx=5, pady=7, sticky=W)
         #self.str_abs_meas_source.set(callback('ask_meas_file'))
 
-        # cut long file paths --> more readable
+        # Use fop functions directly to read settigns file
+        # NOTE: LED intensity and integration time are not read directly
+        # from gui but via MainApp methods.
         try:
-            file_path = fop.read_zero_path()
-            file_path = self.cut_long_filename(file_path)
+            file_path = fop.read_zero_path(True) # True --> give warning if file missing
+            file_path = self.cut_long_filename(file_path) # cut long file paths --> more readable
         except TypeError:
             file_path = ''
             print(' Error: Reference filepath is not correct!')
         self.ref_file_name_var.set(file_path)
         
-
         button_change_file = ttk.Button(page_abs, text='Change', command= self.button_browse_file_click)
         button_change_file.grid(column=3, row=2, padx=5, pady=7)
 
@@ -118,29 +131,10 @@ class GUI:
         button_clear_abs = ttk.Button(page_abs, text="CLEAR ABS", command=self.button_clear_abs_click)
         button_clear_abs.grid(row=7, column=1, padx=5, pady=7, sticky=W)
 
-        # TAB 'AVERAGE' *************************************************************************
-        page_ave = ttk.Frame(self.notebook)
+    # __init__ TAB 'TIME D' for time domain measurements of selected channels
+    # edit : 2024-3-20
+    def _initialize_tab_TIMED(self):
         
-        self.str_ave_count = tkinter.StringVar(page_ave, '')
-        self.str_ave_count.set('AVE SIZE : ')
-        label_ave_count = ttk.Label(page_ave, textvariable=self.str_ave_count)
-        label_ave_count.grid(row=1, column=2, padx=5, pady=7, sticky=W)
-
-        button_add_to_ave = ttk.Button(page_ave, text='ADD', command=self.button_add_to_ave_click)
-        button_add_to_ave.grid(row=1, column=1, padx=5, pady=7, sticky=W)
-
-        button_save_ave = ttk.Button(page_ave, text='SAVE AVE', command=self.button_save_ave_click)
-        button_save_ave.grid(row=2, column=1, padx=5, pady=7, sticky=W)
-
-        button_clear_ave = ttk.Button(page_ave, text='CLEAR AVE', command=self.button_clear_ave_click)
-        button_clear_ave.grid(row=3, column=1, padx=5, pady=7)
-
-        self.str_ave_count.set('AVE SIZE : ' + str(self.callback('ask_ave_count')))
-
-        self.notebook.add(page_ave, text = ' AVERAGE ', padding='5')
-
-        # __init__ TAB 'TIME D' *****************************************************************
-        # edit : 2024-3-20
         page_timed = ttk.Frame(self.notebook)
         self.notebook.add(page_timed, text=' TIME D ', padding='5')
 
@@ -199,6 +193,7 @@ class GUI:
         self.entry_max_cnt = ttk.Entry(self.labelFr_continuous, textvariable=self.str_max_cnt, width=5)
         self.entry_max_cnt.grid(row=2, column=2, padx=5, pady=7, sticky=W)
 
+    def _initialize_tab_SETTINGS(self):
         # __init__ TAB 'SETTINGS' ************************************************************************
         # edit: 2024-2-26
         page_set = ttk.Frame(self.notebook)
@@ -219,39 +214,62 @@ class GUI:
         label_fw_version.grid(row=2, column=1, padx=5, pady=7, sticky=W)
 
         # LED intensity control
+        # edit 2025-2-15
+        min_intensity = 0
+        max_intensity = 31
+        default_intensity = 5
+
         labelfr_set_intensity = ttk.Labelframe(page_set, text=' LED intensity (0...31)')
         labelfr_set_intensity.grid(column=1, row=4, padx=5, pady=7, sticky=W)
         self.str_source_int = tkinter.StringVar(page_set, '')
-        self.spin_intensity = ttk.Spinbox(labelfr_set_intensity, from_= 0, to=31, width=2, validate='focusout', validatecommand=self.spin_intensity_change, textvariable=self.str_source_int)    
-        if (mini_settings.hw_source_intensity >= 0 and mini_settings.hw_source_intensity <= 31):    # set correct default to begin with
-           #self.spin_intensity.set(mini_settings.hw_source_intensity)
-           self.str_source_int.set(mini_settings.hw_source_intensity)
-        else:
-            self.spin_intensity.set(5)
+        self.spin_intensity = ttk.Spinbox(labelfr_set_intensity, from_= min_intensity, to=max_intensity, width=2, validate='focusout', validatecommand=self.spin_intensity_change, textvariable=self.str_source_int)    
+        
+        try:
+            LEDi = fop.read_LED_intensity()
+            if (LEDi < min_intensity or LEDi > max_intensity):
+                if (mini_settings.hw_source_intensity >= min_intensity and mini_settings.hw_source_intensity <= max_intensity):
+                    LEDi = mini_settings.hw_source_intensity          
+                else:
+                    LEDi = default_intensity
+        except ValueError:
+            print(f' ERROR in reading LED intensity value!')
+            LEDi = default_intensity
+        self.str_source_int.set(LEDi)
+        
         self.spin_intensity.grid(column=2, row=1, padx=10, pady=7)
         self.button_set_intensity = ttk.Button(labelfr_set_intensity, text=' SET ', command=self.button_set_intensity_click)
         self.button_set_intensity.grid(column=3, row=1, padx=5, pady=7)
 
         # INTEGRATION TIME control *************************
         # edit 2023-12-31
-        min_itime = 10   # shortest possible integration time in ms
-        max_itime = 500  # longest possible
+        min_itime = 10      # shortest possible integration time in ms
+        max_itime = 500     # longest possible
+        default_iTime = 25  # 
 
         labelfr_set_integration = ttk.Labelframe(page_set, text=' Integration time (ms)')
         labelfr_set_integration.grid(row=4, column=2, padx=5, pady=7, sticky=W)
         
         self.str_itime = tkinter.StringVar(labelfr_set_integration, '')
         self.spin_itime =ttk.Spinbox(labelfr_set_integration, from_=min_itime, to=max_itime, width=3, validate='focusout', validatecommand=self.spin_itime_change, textvariable=self.str_itime)
-        if(mini_settings.hw_integration_time >= min_itime and mini_settings.hw_integration_time <= max_itime): # check that default is correct
-            self.str_itime.set(mini_settings.hw_integration_time)
-        else:
-            self.str_itime.set('20')
+        
+        try:
+            iTime = fop.read_integ_time()
+            if iTime < min_itime or iTime > max_itime:
+                if mini_settings.hw_integration_time >= min_itime and mini_settings.hw_integration_time <= max_itime:
+                    iTime = mini_settings.hw_integration_time
+                else:
+                    iTime = default_iTime 
+        except ValueError:
+            print(f' ERROR in reading integration time!')
+            iTime = default_iTime
+        self.str_itime.set(iTime)
         
         self.button_set_itime = ttk.Button(labelfr_set_integration, text=' SET ', command=self.button_set_itime_click)
         self.button_set_itime.grid(row=1, column=2, padx=5, pady=7)
         
         self.spin_itime.grid(row=1, column=1, padx=5, pady=7, sticky=E)
 
+    def _initialize_tab_TEST(self):
         # __init__ TAB 'TEST' ************************************************************************
         # edit: 2024-3-28
         page_test = ttk.Frame(self.notebook)
@@ -276,11 +294,6 @@ class GUI:
         #self.notebook.pack(expand=1, fill='both')
         self.notebook.grid(column=0, row=0, sticky=(N, W, S, E))
 
-
-
-
-    # END OF __init__ ***
-
     # button_new event handler 
     def button_new_click(self):
         self.callback('r')
@@ -299,8 +312,10 @@ class GUI:
     def button_new_redraw_clicked(self):
         self.callback('ds')
 
+    # event handler for SET button in setting LED intensity
+    # edit : 2025-2-15
+    # desc : 
     def button_set_intensity_click(self):
-        #messagebox.showinfo('Intensity change', 'SET ' + self.str_source_int.get())
         self.callback('gui_int', led_intensity = int(self.str_source_int.get()))
 
     # event handler for set button of integration time
@@ -309,8 +324,8 @@ class GUI:
         self.callback('gui_itime', time = int(self.str_itime.get()))
 
     # button_load event handler
-    # edit: 2023-9-22
-    # desc: Windows tracks well previous file paths used.
+    # edit : 2023-9-22
+    # desc : Windows tracks well previous file paths used.
     def button_load_click(self):
         load_name = filedialog.askopenfilename(title="Select file", filetypes=(("txt files", "*.txt"), ("all files", "*.*")))
         if load_name !='':
@@ -340,6 +355,7 @@ class GUI:
 
     # button_browse_file_click event handler
     # edit : 2023-8-26
+    # desc : Calls directly fop.save_zero_path to save the reference filepath into the settings file.
     def button_browse_file_click(self):
         zero_file = filedialog.askopenfilename(title = "Select file", filetypes = (("txt files", "*.txt"),("all files", "*.*")))
         
@@ -495,17 +511,34 @@ class GUI:
             print(' ERROR in handling "READ CHs" button click!')
             print(str(e))
 
-    # edit : 2024-3-16
-    # desc : toggle continuous measurement of selected channels
+    # edit : 2025-1-17
+    # desc : Start continuous measurement. Stop continuous measurement if button is pressed. Adjust interval with hardware delay.
+    #        Optimal hw_delay with firmware ver 1.0.4.1 was tested to be 860 ms.
+    #        The final value of continuousInterval variable should be above zero.
     def continuous_button_click(self):
 
+        # read & verify the value of the hardware delay from the mini_settings.py
+        hw_delay = 860 # default delay in ms
+        try:
+            importlib.reload(mini_settings) # refresh the settings
+            hw_delay = mini_settings.hw_delay
+            if (hw_delay < 0 or hw_delay > 3000):
+                print(" Incorrect hw_delay value! 860 (ms) will be used instead.")
+        except:
+            print(" ERROR in reading hw_delay value from settings file! ")
+            print(" Check your mini_settings.py for variable 'hw_delay'. If missing, add manually 'hw_delay = 860'.")
+
+        # start button pressed
         if(self.continuous_text.get() == 'START'):
-            self.continuousInterval = int(float(self.str_interval.get()) * 1000)
+            self.continuousInterval = int(float(self.str_interval.get()) * 1000 - hw_delay)
+            if self.continuousInterval < 100:
+                self.continuousInterval = 100
             self.continuousCount = 0
             self.continuousActivated = True
             self.root.after(self.continuousInterval, self.ContinuousTimeOut)
             self.continuous_text.set('STOP')
 
+        # stop button pressed
         elif(self.continuous_text.get() == 'STOP'):
             self.continuousActivated = False
             self.continuous_text.set('START')

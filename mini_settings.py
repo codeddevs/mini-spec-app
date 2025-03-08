@@ -1,7 +1,7 @@
-# Copyright (c) 2023 Coded Devices Oy
+# Copyright (c) 2025 Coded Devices Oy
 
 # Settings for Mini Spec App
-# ver : 2023-12-31
+# ver : 2025-1-17
 
 # SPECIAL FILE NAMES
 background_file_name = "background.txt"
@@ -14,7 +14,7 @@ my_spectra_folder = "./my_spectra/"         # default subfolder for saving and l
 # in Linux use command 'dmesg|grep tty' to check the correct address and if 
 # the device has been detected correctly
 # sometimes it is necessary to start the program using command 'sudo python3 mini_main.py'
-comport_name = "COM5" # Windows pc type port name 
+comport_name = "COM3" # Windows pc type port name 
 #comport_name = "/dev/ttyUSB0" # Ubuntu pc type port name
 
 
@@ -37,3 +37,7 @@ hw_source_intensity = 5
 
 # DEFAULT INTEGRATION TIME (ms)
 hw_integration_time = 20
+
+# HARDWARE DELAY IN RESPONDING THE DATA REQUEST (ms)
+# used in time d measurements to make intervals more accurate
+hw_delay = 860
