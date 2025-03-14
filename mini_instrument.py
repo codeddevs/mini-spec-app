@@ -2,7 +2,7 @@
 
 # file name : mini_instrument.py
 # ver : 2025-2-14
-# target firmware ver : 1.5.0.1 or later
+# target firmware ver : tested range 1.0.4.3 ... 1.0.5.3
 # desc: Defines instrument class which controls Mini Spectrometer hardware via 
 #       serial communication.
 
