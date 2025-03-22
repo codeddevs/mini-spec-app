@@ -7,7 +7,7 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 
 How to Use This Repository
 
-To get started, download the latest release or individual files directly from the Releases section. If you're comfortable using Git, you can also clone the repository.
+To get started, download the latest release from the Releases section or individual files directly. If you're comfortable with Git, you can also clone the repository.
 
 Once you have the files, feel free to explore the code and provide feedback by leaving comments or suggestions in the Issues section. We value your input and look forward to hearing from you!
 
