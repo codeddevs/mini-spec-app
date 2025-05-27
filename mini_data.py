@@ -1,20 +1,21 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2025-2-15
+# ver : 2025-05-04
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
 
 import matplotlib.pyplot as plt
-import mini_settings
+#import mini_settings
 import mini_file_operations as fop
 import copy
 import mini_temp
+import mini_defaults
 
 class mini_data:
         
-    # edit 2023-12-15
+    # edit 2025-4-20
     def __init__ (self):
         self.data = []              # Warning! data array can contain modified data, ch numbers or wavelengths.
         self.background = []        # Refrence background signal that can be subtracted from measurement. 
@@ -26,29 +27,57 @@ class mini_data:
         self.rel_absorption = []    # relative absoprtion spectrum = (zero_reference - sample) / zero_reference * 100
         self.data_file_name = ""    # include in plots
         self.added_to_average = False   # result already added to average spectrum
-
+        self.CALIB = {              # wavelength calibration coefficients
+            "a0" : None,
+            "b1" : None,
+            "b2" : None,
+            "b3" : None,
+            "b4" : None,
+            "b5" : None
+        }
+    
+    # method : CheckCalibCoeffs
+    # edit : 2025-4-19
+    def CheckCalib(self):
+        OK = 1
+        print(" Reading calibration... ", end="")
+        for key, value in self.CALIB.items():
+            if value == None or value == 0.0:
+                print(f" ERROR in {key} calibration coefficient!")
+                OK = 0
+            #else:
+                #print(f" Coeff {key} is {value}")
+        if OK:
+            print("ready!")
 
     # method : channelToWavelength
-	# ver : 29.4.2022
+	# edit : 2025-4-20
 	# desc : Convert channel (pix) number 1...288 to wavelength using factory calibration data.
-    #        In data[][] array overwrite channel values using wavelength values. 
+    #        In data[][] array overwrite channel numbers with wavelengths. 
     #        Factory calibration data is found in the sensor datasheet.
     #        Last addition of 0.5 is for correct rounding in float --> int conversion.
-    #        Notice! channel = 0 gives nonsense.    
 	#
     def channelToWavelength(self):
         for i in range(len(self.data)):
             x = self.data[i][0]
-            self.data[i][0] = int(mini_settings.calib_a0 \
-                                + x * mini_settings.calib_b1 \
-                                + x**2 * mini_settings.calib_b2 \
-                                + x**3 * mini_settings.calib_b3 \
-                                + x**4 * mini_settings.calib_b4 \
-                                + x**5 * mini_settings.calib_b5 \
-                                + 0.5)
+            self.data[i][0] = int(self.CALIB["a0"] \
+                                  + x * self.CALIB["b1"] \
+                                  + x**2 * self.CALIB["b2"] \
+                                  + x**3 * self.CALIB["b3"] \
+                                  + x**4 * self.CALIB["b4"] \
+                                  + x**5 * self.CALIB["b5"] \
+                                  + 0.5)
+
+            # self.data[i][0] = int(mini_settings.calib_a0 \
+            #                     + x * mini_settings.calib_b1 \
+            #                     + x**2 * mini_settings.calib_b2 \
+            #                     + x**3 * mini_settings.calib_b3 \
+            #                     + x**4 * mini_settings.calib_b4 \
+            #                     + x**5 * mini_settings.calib_b5 \
+            #                     + 0.5)
 
     # method : waveLengthToChannel
-    # ver : 2025-2-8
+    # ver : 2025-4-20
     # desc : Convert a wave length to a channel number (1...288)
     #        Returns a channel number, not channel index!
     #        Returns channel number zero if wevelength is shorter than can be actually measured,
@@ -59,15 +88,25 @@ class mini_data:
 
         min_diff = 890 - 310
         min_diff_channel = 0
+        ch_count = int(fop.test_read_settings_file("device", "hw_channel_count"))
                  
-        for i in range(1, mini_settings.hw_channel_count + 1):
-            w = int(mini_settings.calib_a0 \
-                + i * mini_settings.calib_b1 \
-                + i**2 * mini_settings.calib_b2 \
-                + i**3 * mini_settings.calib_b3 \
-                + i**4 * mini_settings.calib_b4 \
-                + i**5 * mini_settings.calib_b5
-                + 0.5)
+        for i in range(1, ch_count + 1):
+
+            w = int(self.CALIB["a0"] \
+                + i * self.CALIB["b1"] \
+                + i**2 * self.CALIB["b2"] \
+                + i**3 * self.CALIB["b3"] \
+                + i**4 * self.CALIB["b4"] \
+                + i**5 * self.CALIB["b5"] \
+                + 0.5) 
+
+            # w = int(mini_settings.calib_a0 \
+            #     + i * mini_settings.calib_b1 \
+            #     + i**2 * mini_settings.calib_b2 \
+            #     + i**3 * mini_settings.calib_b3 \
+            #     + i**4 * mini_settings.calib_b4 \
+            #     + i**5 * mini_settings.calib_b5
+            #     + 0.5)
 
             diff = abs(any_wave_length - w)
             
@@ -315,6 +354,7 @@ class mini_data:
             ch_no = 100
         return self.data[ch_no][1]
 
+    # NOT USED WITH GUI, NOT UP-TO-DATE
     # method : intCorrect
     # ver : 11.5.2022
     # desc : Use calibration file to correct intensity response for each channel.
@@ -439,13 +479,17 @@ class mini_data:
         return 1
 
     # method : get_rel_abs_from_file
-    # edit : 2023-9-22
+    # edit : 2025-4-25
     # desc : Calculates relative absorption spectrum using given reference file.
-    #        Automatic DC-removal and filtration.
+    #        Automatic DC-removal and filtration. Return 0 if no data, return 1 if successful
     # todo : Verify that this method does not alter the original spectrum data.
     #        Combine with get_rel_abs method.
     
     def get_rel_abs_from_file(self, zero_ref_file):
+    
+        if len(self.data) < 1:
+            print(" ERROR: No data for absorption calculation!")
+            return 0 #error
 
         MIN_LEVEL = 20 # limits calculation to meaningfull areas to avoid abs noise peaks
         
@@ -456,8 +500,8 @@ class mini_data:
         self.remove_any_dc(self.zero_reference, self.estimate_any_dc(self.zero_reference))
         #self.removeDC(self.estimate_dc())
         self.remove_any_dc(data_local_copy, self.estimate_any_dc(data_local_copy))
-
-
+        
+        
         #filter, no effect to original spectrum
         f_reference = mini_temp.lowpass_filter(self.zero_reference)
         #f_data = mini_temp.lowpass_filter(self.data)
@@ -493,7 +537,8 @@ class mini_data:
               
                 self.rel_absorption.append([f_data[i][0], temp])
         except Exception as x:
-            print(x)       
+            print(x)  
+        return 1 # OK
  
     # method : drawLineAbsorption
 	# ver : 19.8.2022
@@ -592,7 +637,7 @@ class mini_data:
         
 
 # unit test main
-# ver 2025-2-8
+# ver 2025-4-20
 #
 if __name__ == '__main__':
 
@@ -600,6 +645,8 @@ if __name__ == '__main__':
 
     # TEST WAVE LENGTH <--> CHANNEL CONVERSION
     if True:
+
+        myData.CALIB = mini_defaults.DEFAULT_SETTINGS['calibration']
 
         print("channels:")    
         print(myData.waveLengthToChannel(313)) #  1
@@ -616,43 +663,8 @@ if __name__ == '__main__':
         print(myData.data[0][0])
         print(myData.data[1][0])
         print(myData.data[2][0])
-       
-    # TEST RELATIVE ABSORPTION
-    if False:
-
-        print("Load from file")
-        file_name = input("File name in folder " + mini_settings.my_spectra_folder + " ?: ")
-        tempData = []
-        tempData, unit = fop.read_file(mini_settings.my_spectra_folder + file_name)
-        #myData.data_file_name = file_name
-        if tempData != -1: # error in reading file       
-            try:
-                myData.data_file_name = file_name
-
-                # % 
-                if unit == '%':
-                    myData.rel_absorption = tempData
-                    myData.draw_rel_absorption(myData.rel_absorption)
-                # bits or coeff
-                else:
-                    myData.data = tempData
-                    myData.drawLineSpectrum()
-                
-            except TypeError: 
-                print(" Wrong file name or file type!")
-        # ABSOLUTE ABSORPTION        
-        #myData.get_absorption()
-        #myData.drawLineAbsorption()
-        
-        # RELATIVE ABSORPTION
-        myData.get_rel_abs()
-        myData.draw_rel_absorption(myData.rel_absorption)
-        input("second")
-        myData.get_rel_abs()
-        myData.draw_rel_absorption(myData.rel_absorption)
-
-    input("bye")
-
+      
+    
             
 
         

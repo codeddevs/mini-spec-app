@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # Mini Spec App GUI
-# edit 2025-1-17
+# edit 2025-5-27
 # todo : 
 
 import tkinter
@@ -14,11 +14,12 @@ import threading
 from datetime import datetime
 
 import importlib
-import mini_settings
+#import mini_settings
 import mini_file_operations as fop
+import mini_defaults
 
 
-# edit : 2025-2-15
+# edit : 2025-4-24
 class GUI:
     
     #edit : 2025-1-17
@@ -27,7 +28,7 @@ class GUI:
         self.callback = callback
         self.root = root
         self.root.title("Mini Spec App by Coded Devices")
-        self.default_file_location = "c:"   # mini_settings.my_spectra_folder
+        #self.default_file_location = "c:"   # mini_settings.my_spectra_folder
         self.app_version = ""               # MainApp constructor sets version during start up
         self.continuousActivated = False
         self.continuousInterval = 1000      # in ms
@@ -108,11 +109,10 @@ class GUI:
         label_meas_source.grid(column=2, row=3, padx=5, pady=7, sticky=W)
         #self.str_abs_meas_source.set(callback('ask_meas_file'))
 
-        # Use fop functions directly to read settigns file
-        # NOTE: LED intensity and integration time are not read directly
-        # from gui but via MainApp methods.
+        # edit 2025-4-20
         try:
-            file_path = fop.read_zero_path(True) # True --> give warning if file missing
+            #file_path = fop.read_zero_path(True) # True --> give warning if file missing
+            file_path = fop.read_settings_file("files", "zero_reference_file")
             file_path = self.cut_long_filename(file_path) # cut long file paths --> more readable
         except TypeError:
             file_path = ''
@@ -195,7 +195,7 @@ class GUI:
 
     def _initialize_tab_SETTINGS(self):
         # __init__ TAB 'SETTINGS' ************************************************************************
-        # edit: 2024-2-26
+        # edit: 2024-4-24
         page_set = ttk.Frame(self.notebook)
         self.notebook.add(page_set, text=' SETTINGS ', padding='5')
 
@@ -203,7 +203,7 @@ class GUI:
         
         self.str_fw_version = tkinter.StringVar(page_set, 'Firmware Version: ?')
         
-        self.str_port = tkinter.StringVar(page_set, 'COM port name: ' + mini_settings.comport_name)
+        self.str_port = tkinter.StringVar(page_set, 'COM port name: ' + fop.read_settings_file("device", "comport_name"))
         label_port = ttk.Label(page_set, textvariable=self.str_port)
         label_port.grid(row=3, column=1, padx=5, pady=7, sticky=W)
         
@@ -214,7 +214,9 @@ class GUI:
         label_fw_version.grid(row=2, column=1, padx=5, pady=7, sticky=W)
 
         # LED intensity control
-        # edit 2025-2-15
+        # edit 2025-4-25
+
+        # use these hardcoded values if no better available
         min_intensity = 0
         max_intensity = 31
         default_intensity = 5
@@ -225,15 +227,20 @@ class GUI:
         self.spin_intensity = ttk.Spinbox(labelfr_set_intensity, from_= min_intensity, to=max_intensity, width=2, validate='focusout', validatecommand=self.spin_intensity_change, textvariable=self.str_source_int)    
         
         try:
-            LEDi = fop.read_LED_intensity()
+            LEDi = int(fop.read_settings_file("measurement", "hw_source_intensity" ))
             if (LEDi < min_intensity or LEDi > max_intensity):
-                if (mini_settings.hw_source_intensity >= min_intensity and mini_settings.hw_source_intensity <= max_intensity):
-                    LEDi = mini_settings.hw_source_intensity          
+                default_file_i = int(mini_defaults.DEFAULT_SETTINGS["measurement"]["hw_source_intensity"])
+                if (default_file_i >= min_intensity and default_file_i <= max_intensity):
+                    LEDi = default_file_i          
                 else:
                     LEDi = default_intensity
+                fop.update_settings_file("measurement", "hw_source_intensity", LEDi)
+
         except ValueError:
             print(f' ERROR in reading LED intensity value!')
             LEDi = default_intensity
+            fop.update_settings_file("measurement", "hw_source_intensity", LEDi)
+
         self.str_source_int.set(LEDi)
         
         self.spin_intensity.grid(column=2, row=1, padx=10, pady=7)
@@ -241,7 +248,9 @@ class GUI:
         self.button_set_intensity.grid(column=3, row=1, padx=5, pady=7)
 
         # INTEGRATION TIME control *************************
-        # edit 2023-12-31
+        # edit 2025-4-25
+
+        # use these hardcoded values if no better is available
         min_itime = 10      # shortest possible integration time in ms
         max_itime = 500     # longest possible
         default_iTime = 25  # 
@@ -253,15 +262,19 @@ class GUI:
         self.spin_itime =ttk.Spinbox(labelfr_set_integration, from_=min_itime, to=max_itime, width=3, validate='focusout', validatecommand=self.spin_itime_change, textvariable=self.str_itime)
         
         try:
-            iTime = fop.read_integ_time()
+            iTime = int(fop.read_settings_file("measurement", "hw_integration_time"))
             if iTime < min_itime or iTime > max_itime:
-                if mini_settings.hw_integration_time >= min_itime and mini_settings.hw_integration_time <= max_itime:
-                    iTime = mini_settings.hw_integration_time
+                default_file_itime = int(mini_defaults.DEFAULT_SETTINGS["measurement"]["hw_integration_time"])
+                if default_file_itime >= min_itime and default_file_itime <= max_itime:
+                    iTime = default_file_itime
                 else:
-                    iTime = default_iTime 
+                    iTime = default_iTime
+                fop.update_settings_file("measurement", "hw_integration_time", iTime)
         except ValueError:
             print(f' ERROR in reading integration time!')
             iTime = default_iTime
+            fop.update_settings_file("measurement", "hw_integration_time", iTime)
+
         self.str_itime.set(iTime)
         
         self.button_set_itime = ttk.Button(labelfr_set_integration, text=' SET ', command=self.button_set_itime_click)
@@ -354,20 +367,28 @@ class GUI:
         self.callback('clg')
 
     # button_browse_file_click event handler
-    # edit : 2023-8-26
-    # desc : Calls directly fop.save_zero_path to save the reference filepath into the settings file.
+    # edit : 2025-4-20
+    # desc : Saves automatically the selected file path in the settings file.
     def button_browse_file_click(self):
         zero_file = filedialog.askopenfilename(title = "Select file", filetypes = (("txt files", "*.txt"),("all files", "*.*")))
         
         if len(zero_file) > 0:
             self.ref_file_name_var.set('')
-            fop.save_zero_path(zero_file)
+            #fop.save_zero_path(zero_file)
+            fop.update_settings_file("files", "zero_reference_file", zero_file)
             self.ref_file_name_var.set(self.cut_long_filename(zero_file))
 
     # button_calc_abs_click event handler
+    # edit : 2025-5-23
+    # desc : If file path is OK, calls absorption calculation in mini_main.py.
     def button_calc_abs_click(self):
-        ref_file = fop.read_zero_path()
-        self.callback('cab', filename = ref_file)
+       
+        ref_file = fop.read_settings_file("files", "zero_reference_file")
+        
+        if fop.Check_File_Path(ref_file) is True:
+            self.callback('cab', filename = ref_file)
+        else:
+            print(f" ERROR: Reference file {ref_file} was not found!")  
 
     # button_save_abs_click event handler
     # edit : 2023-10-6
@@ -511,22 +532,22 @@ class GUI:
             print(' ERROR in handling "READ CHs" button click!')
             print(str(e))
 
-    # edit : 2025-1-17
+    # edit : 2025-4-20
     # desc : Start continuous measurement. Stop continuous measurement if button is pressed. Adjust interval with hardware delay.
     #        Optimal hw_delay with firmware ver 1.0.4.1 was tested to be 860 ms.
     #        The final value of continuousInterval variable should be above zero.
     def continuous_button_click(self):
 
-        # read & verify the value of the hardware delay from the mini_settings.py
-        hw_delay = 860 # default delay in ms
+        # read & verify the value of the hardware delay
         try:
-            importlib.reload(mini_settings) # refresh the settings
-            hw_delay = mini_settings.hw_delay
+            hw_delay = int(fop.read_settings_file("device", "hw_delay"))
             if (hw_delay < 0 or hw_delay > 3000):
-                print(" Incorrect hw_delay value! 860 (ms) will be used instead.")
+                default_hw_delay = int(mini_defaults.DEFAULT_SETTINGS["device"]["hw_delay"])
+                fop.update_settings_file("device", "hw_delay", default_hw_delay)
+                print(f" Incorrect hw_delay value! {default_hw_delay} (ms) will be used instead.")
         except:
-            print(" ERROR in reading hw_delay value from settings file! ")
-            print(" Check your mini_settings.py for variable 'hw_delay'. If missing, add manually 'hw_delay = 860'.")
+            print(f" ERROR in reading hw_delay value from {fop.test_settings_file_name}")
+            hw_delay = 860
 
         # start button pressed
         if(self.continuous_text.get() == 'START'):

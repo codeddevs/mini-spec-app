@@ -1,26 +1,54 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # file : mini_file_operations.py
-# edit : 2025-1-25
+# edit : 2025-05-27
 # desc : Reads and writes of the Mini Spec app
 # TODO : After reading the reference file name from the saved settings,
 #        then test that this filepath still points to a usable data.
 
 import os
-import pickle
-import mini_settings
+import mini_defaults
+import configparser
 
-# 2025-1-23
-# dictionary data type for all settings to be saved (serialized) between sessions
-settings_dic = {
-    "zero_path" : '',
-    "LED_int" : mini_settings.hw_source_intensity,
-    "integ_time" : mini_settings.hw_integration_time
-    }
+# settings ini file
+settigs_file_name = "mini_settings.ini"
 
-# filepath for user settings binary file containing values for
-# zero reference filepath, LED intensity and integration time.
-settings_fp = 'my_settings.txt'
+# edit : 2025-5-23
+# desc : Returns True if path exists.
+def Check_File_Path(file_path):
+    return os.path.exists(file_path)
+
+# edit : 2025-4-19
+# desc : Check if all content of the settings file exist. Defaults used if missing.
+def test_settings(config):
+    for section_name, options in mini_defaults.DEFAULT_SETTINGS.items():
+        if not config.has_section(section_name):
+            config.add_section(section_name)
+        for option_name, value in options.items():
+            if not config.has_option(section_name, option_name) or not config.get(section_name, option_name):
+                config.set(section_name, option_name, str(value))
+
+# Edit : 2025-4-19
+# Desc : Reading settings from a structured .ini file.
+# Note! Config.read will return the file name (actually list) that was succesfully read. 
+#       If file reading fails an empty list is returned.
+#       Check read settings values later in try... except way and prepare for parsing errors 
+#       --> Raises: MissingSectionHeaderError if the INI file is malformed.
+def load_settings(config, file_name):
+    read_file = config.read(file_name)
+    if not read_file:
+        raise FileNotFoundError(f" File {file_name} may not exist or is invalid.")
+    return config
+
+# Edit : 2025-3-21
+# Note! If the file is missing but directory is correct a new file is created.
+def save_settings(config, file_name):
+    try:
+        with open(file_name, "w") as configfile:
+            config.write(configfile)
+    except Exception as e:
+        print(f" ERROR in saving settings. {e}")
+        
 
 # func : read_file
 # rev. : 29.5.2022
@@ -76,78 +104,65 @@ def read_file(fileName):
     file.close()
     return data, unit
 
-# edit : 2025-2-15
-# desc : Common saving function for user settings.
-#        Use pickle to save settings_dic dictionary to a binary file my_settings.txt.
-#        Overwrite the existing file. 
-def save_settings():
-    global settings_dic
+# desc : Writea a new value in the settings file.
+# edit : 2025-05-08
+def update_settings_file(section, key, value):
+    temp_config = configparser.ConfigParser(inline_comment_prefixes = "#")
     try:
-        with open(settings_fp, 'wb') as settings_file:
-            pickle.dump(settings_dic, settings_file)
-    except Exception as e:
-        print(f"Error writing to file {settings_fp}: {e}")
+        temp_config = load_settings(temp_config, settigs_file_name)
 
-# edit : 2025-1-25
-# desc : Common loading function for all user settings.
-#        Use pickle to load the saved settings_dic dictionary from binary file my_settings.txt.
-#        Return 1 if file was found 0 if not.
-def load_settings(print_warnings):
-    global settings_dic
-    try:
-        with open(settings_fp, 'rb') as settings_file:
-            settings_dic = pickle.load(settings_file)
-        return 1 # file OK
-    except FileNotFoundError:
-        if print_warnings == True:
-            print(f" Settings file {settings_fp} was not found.") 
-            print(f" But don't worry, it will be created next time a setting is saved.")
-        return 0 # reading failed
-    except Exception as e:
-        if print_warnings == True:
-            print(f" Error reading from file {settings_fp}: {e}")  
-        return 0 # reading failed
+        if section not in temp_config:
+            print(f" ERROR: section [{section}] not found!")
+            return None
+        
+        if value is None or str(value) == "None":
+            print(f" ERROR: trying to save {key} value as None")
+            return None
+
+        temp_config[section][key] = str(value)
+        save_settings(temp_config, settigs_file_name)
+        return temp_config[section][key]
     
-# edit : 2025-2-15
-# desc : Update the filepath of the zero reference file in dictionary settings_dic["zero_path"], then save the dictionary.
-def save_zero_path(file_path):
-    global settings_dic
-    settings_dic["zero_path"] = file_path
-    save_settings()
-             
-# edit : 2025-2-15
-# desc : Update the LED intensity value in dictionary settings_dic["LED_int"], then save the dictionary.
-def save_LED_intensity(LEDi):
-    global settings_dic # global necessary when modifying the content
-    settings_dic['LED_int'] = LEDi
-    save_settings()
+    except FileNotFoundError:
+        print(f" ERROR: settigs file {settigs_file_name} not found!")
+        return None
+    
+    except configparser.MissingSectionHeaderError:
+        print(f" ERROR: section [{section}] was not found!")
+        return None
+    
+    except Exception as e:
+        print(f" ERROR: unexpected problem in writing to settings file. {e}")
+        return None
 
-# edit : 2025-2-15
-# desc : Update the sensor integration time in dictionary settings_dic["integ_time"], then save the dictionary. 
-def save_integ_time(i_time):
-     global settings_dic
-     settings_dic['integ_time'] = i_time
-     save_settings()
+# desc : Read a key value from the settings file.
+# edit : 2025-05-08
+def read_settings_file(section, key):
+    temp_config = configparser.ConfigParser(inline_comment_prefixes = "#")
+    try:
+        temp_config = load_settings(temp_config, settigs_file_name)
 
-# edit 2025-2-15
-# desc : Load dictionary settings_dic from file my_settings.txt and return the path of zero reference file.
-def read_zero_path(print_warnings = False):
-    load_settings(print_warnings)
-    return settings_dic.get('zero_path', '')
+        if section not in temp_config:
+            print(f" ERROR: section [{section}] not found!")
+            return None
+        
+        if key not in temp_config[section]:
+            print(f" ERROR: key '{key}' not found in section [{section}]!")
+            return None
 
-# edit 2025-2-15
-# desc : Load dictionary settings_dic from file my_settings.txt and return the LED itensity value.
-def read_LED_intensity(print_warnings = False):
-    load_settings(print_warnings)
-    return settings_dic.get('LED_int', mini_settings.hw_source_intensity)
-
-# edit 2025-2-15
-# desc : Load sictionary settings_dic from file my_settings.txt and return the sensor integration time value.
-def read_integ_time(print_warnings = False):
-    load_settings(print_warnings)
-    return settings_dic.get('integ_time', mini_settings.hw_integration_time)
-
-
+        return temp_config[section][key]
+    
+    except FileNotFoundError:
+         print(f" ERROR: settigs file {settigs_file_name} not found!")
+         return None
+    
+    except configparser.MissingSectionHeaderError:
+         print(f" ERROR: section {[section]} was not found!")
+         return None
+    
+    except Exception as e:
+        print(f" ERROR: unexpected problem in reading the settings file. {e}")
+        return None
 
 # func : read_CIE_file
 # rev. : 31.3.2019
@@ -297,25 +312,21 @@ def WriteTimedFile(timed_data, file_name, comment=''):
 
 
 # unit test main
-# edit : 2025-1-25
+# edit : 2025-05-08
 #
 if __name__ == '__main__':
     
-    # test writing settings to a binary file 'my_settings.txt'
-
-    #save_integ_time(21)
-    #print(read_integ_time())
-
-    # test zero reference file path read & save
-    print('loaded:')
-    print(read_zero_path())
-    print('next saving')
-    save_zero_path('c:\\')
+    t_section = "measurement"
+    t_key = "hw_source_intensity"
     
-    # test LED intensity
-    print(read_LED_intensity())
-    save_LED_intensity(9)
-    print(read_LED_intensity())
+    # test reading a value from the settings file
+    t_value = read_settings_file(t_section, t_key)
+    print(f" Test : Found {t_key} = {t_value}")
 
-
+    # test adding a new value to settings file
+    ret_val = update_settings_file(t_section, t_key, str(t_value))
+    if ret_val:
+         print(f" Test : Updated successfully: {t_key} = {t_value}")
+    else:
+         print(f" Test : Error in updating {t_key} = {t_value}") 
 

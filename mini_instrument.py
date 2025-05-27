@@ -1,8 +1,8 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # file name : mini_instrument.py
-# ver : 2025-2-14
-# target firmware ver : tested range 1.0.4.1 ... 1.0.5.3
+# ver : 2025-05-08
+# target firmware ver :  tested range 1.0.4.1 ... 1.0.5.3
 # desc: Defines instrument class which controls Mini Spectrometer hardware via 
 #       serial communication.
 
@@ -21,15 +21,14 @@
 import serial
 import random
 import time
-import mini_settings
+import mini_file_operations as fop
 
 class mini_instrument:
 
     myPort = serial.Serial()
  
-
     # Constructor
-    # ver : 2025-2-14
+    # edit : 2025-05-27
     #
     def __init__ (self):
          
@@ -41,19 +40,21 @@ class mini_instrument:
         self.myPort.xonxoff = 0
         self.myPort.rtscts = 0
         self.myPort.timeout = 1             # 1 sec timeout in reading lines
-        self.myPort.port = mini_settings.comport_name
-
+        self.myPort.port = ""
         self.spectrum_data = []
         self.fw_version = None  # firmware version, 
                                 # will be read back from the instrument during the startup
 
+    # desc : Get comport name from the settings file. Then open the comport. Return True if successful.
+    # edit : 2025-05-08
     def openPort(self):
         port_opened = False
         try:
+            self.myPort.port = fop.read_settings_file("device", "comport_name")
             self.myPort.open()
             port_opened = True
         except serial.SerialException:
-            print(" Error in connecting to the device!")
+            print(f" Error in connecting to the device using comport name {self.myPort.port} !")
         return port_opened
 
     # method : writeC
@@ -66,39 +67,7 @@ class mini_instrument:
         except serial.SerialException as serr:
             print(str(serr))
     
-    # method : getFirmwareVer
-    # ver : 8.4.2022
-    # desc : Print to terminal the version number of the instrument firmware.
-    #        Not called by GUI but only command line main. 
-    def printFirmwareVersion(self):
-
-        try:
-            self.myPort.flush()
-            self.myPort.write(b'V')
-            
-            time.sleep(0.1)
-            line_1 = self.myPort.readline().strip().decode("ascii") # catch extra line change ??  
-            #print(line_1)
-
-            time.sleep(0.1)
-            line_2 = self.myPort.readline().strip().decode("ascii") # read the returned command 'V'
-            
-            print(" Firmware version ", end = "")
-            time.sleep(0.1)
-            line_3 = self.myPort.readline().strip().decode("ascii") # read the version data
-            for i in range(len(line_3)-1):
-                print(line_3[i] + ".", end = "")
-            print(line_3[len(line_3)-1])
-                
-        except serial.SerialException as serr:
-            print(str(serr))
-        except ValueError as verr:
-            print(' Error in receiving the firmware version!')
-            print(str(verr))
-        except Exception as e:
-            print(' Error in receiving the firmware version!')
-            print(str(e))
-    
+        
     # return str instead of printing
     # edit : 2025-2-14
     # desc : Return the current hardware firmware version. If version is 'None' it has not been

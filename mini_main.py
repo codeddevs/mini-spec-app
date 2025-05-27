@@ -1,37 +1,35 @@
 # Copyright (c) 2025 Coded Devices Oy
 #
 # file : mini_main.py
-# ver  : 2025-2-14
+# ver  : 2025-05-27
 # desc : Main file of the Mini Spectormeter Python3 application.
 #	 	 Communication with the hardware via FTDI VCP drivers.
 # TODO : - Correct intensity calibration so that highest point of the spectrum
 #        maintains its value.
 #        - Change command 'one' to ask a wavelength instead of channel nr.
 #        - Check if port is open before further action.
-#        
-#
+
 import matplotlib.pyplot as plt
 import mini_file_operations as fop
 import mini_temp
 from mini_data import mini_data
-#from mini_timed_data import mini_timed_data
 from mini_instrument import mini_instrument
 from mini_timed_multi_data import mini_timed_multi_data
-import mini_settings as settings
-#import mini_color as color
 import mini_gui
 from datetime import datetime
 import time
 import threading
 import tkinter as tk
+import configparser
+import mini_defaults
 
 # VERSION
 # UPDATE THE VERSION NUMBER/DATE ONLY HERE
-app_version = "2025-2-16"
+app_version = "2025-05-26"
 
 class MainApp:
     
-    # edit 2025-2-16
+    # edit 2025-5-26
     def __init__(self):
         
         self.myData = mini_data()               # spectrum data
@@ -40,6 +38,7 @@ class MainApp:
         self.data = []
         self.continuousActivated = False        # boolean for state of continuous measuring
         self.continuousInterval = 1             # interval of continuous readings in sec
+        self.hw_channel_count = None            # number of channels of the connected instrument (initialized with bad value)
 
         # Print Start info
         print("")
@@ -49,12 +48,30 @@ class MainApp:
         print(" Connecting to hardware...")
         print("")
 
+        # Read, test and save settings in .ini file to make sure all sections are found
+        # and all keys have values.
+        # edit : 2025-5-26
+        settings = configparser.ConfigParser(comment_prefixes = "#") # ini file content
+        try:
+            settings = fop.load_settings(settings, fop.settigs_file_name)
+        except FileNotFoundError as e:
+            print(f"{e}")
+            print(f" Creating a new {fop.settigs_file_name} with defaults!")
+        fop.test_settings(settings)
+        fop.save_settings(settings, fop.settigs_file_name)
+
+        # Get calibration coefficients from settings file
+        # Edit : 2025-4-20
+        for key in settings['calibration']:
+            self.myData.CALIB[key] = float(settings["calibration"][key])
+        self.myData.CheckCalib()
+
         # Connect to the instrument
-        # edit : 2025-2-16
+        # edit : 2025-4-19
         # desc : Connect to the instrument. Then 
         #        1) read back firmware version,
-        #        2) read LED intensity from the settings file and send it to the instrument,
-        #        3) read integration time from the settings file and send it to the instrument.  
+        #        2) Send LED intensity to the instrument,
+        #        3) Send integration time to the instrument.  
         # todo : Separate error in returned LED value from old firmware not returning it.
         connected = self.myInstrument.openPort()
         if connected is True:
@@ -67,9 +84,9 @@ class MainApp:
             print(" Firmware version : " + fw_version)
 
             # INIT LED INTENSITY
-            LEDi = fop.read_LED_intensity()
+            LEDi = int(settings["measurement"]["hw_source_intensity"])
             if (LEDi < 0 or LEDi > 31):
-                LEDi = settings.hw_source_intensity
+                LEDi = int(mini_defaults.DEFAULT_SETTINGS["measurement"]["hw_source_intensity"])
             new_LEDi = self.myInstrument.setSourceIntensity(LEDi)
             # requested LED intensity (but not returned because of old fw version or error)
             if (new_LEDi == -1):
@@ -79,9 +96,9 @@ class MainApp:
                 print(f' LED intensity : {new_LEDi}')
 
             # INIT INTEGRATION TIME
-            iTime = fop.read_integ_time()
+            iTime = int(settings["measurement"]["hw_integration_time"])
             if (iTime < 10 or iTime > 500):
-                iTime = settings.hw_integration_time
+                iTime = int(mini_defaults.DEFAULT_SETTINGS["measurement"]["hw_integration_time"])
             new_iTime = self.myInstrument.setIntegrationTime(iTime)
             if(new_iTime != iTime):
                 print(f' ERROR in setting integration time!')
@@ -91,8 +108,10 @@ class MainApp:
         else:
             fw_version = 'N.A.'
 
-        # init
-        fop.create_spectra_folder(settings.my_spectra_folder)
+        # Other Init
+        # edit : 2025-4-20
+        fop.create_spectra_folder(fop.read_settings_file("files", "my_spectra_folder"))        # default folder for spectra
+        self.hw_channel_count = int(fop.read_settings_file("device", "hw_channel_count"))      # instrument channel count
 
         # Start GUI
         self.root = tk.Tk()
@@ -106,7 +125,7 @@ class MainApp:
        
     
     # CLOSE APP
-    # edit : 2024-3-28
+    # edit : 2024-4-19
     def exit_app(self):
         print(' Closing the App, bye!')
         self.root.destroy()
@@ -163,18 +182,15 @@ class MainApp:
             print("q : quit")
         
         # INTEGRATION TIME W GUI
-        # edit : 2025-2-16
+        # edit : 2025-4-20
         elif inputCommand == 'gui_itime':
             print(' Change integration time')
             if 'time' in kwargs:
                 itime = kwargs['time']
 
                 # save to file
-                try:
-                    fop.save_integ_time(itime)
-                except FileNotFoundError:
-                    print(f' Error in saving integration time!')             
-                
+                fop.update_settings_file("measurement", "hw_integration_time", itime)
+                                
                 # send to instrument
                 try:
                     new_itime = self.myInstrument.setIntegrationTime(itime)
@@ -331,6 +347,7 @@ class MainApp:
             self.myData.data = mini_temp.lowpass_filter(self.myData.data)
             self.myData.drawLineSpectrum()
 
+        # NOT USED WITH GUI, NOT UP-TO-DATE
         # CONTINUOUSLY ONE CHANNEL ONCE PER SEC
         # edit : 2023-12-15
         # TODO : Condsider combining 'one' with 'p'
@@ -341,7 +358,7 @@ class MainApp:
             if(ch_number < 1):
                 print(' ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
 
-            elif (ch_number > settings.hw_channel_count):
+            elif (ch_number > self.hw_channel_count):
                 print(' ' + wave_length + ' nm is too LONG a wave length for the hardware.')
             
             else:
@@ -355,7 +372,7 @@ class MainApp:
                 self.myInstrument.clearInputBuffer()
 
 
-        # INTENSITY CORRECTION
+        # INTENSITY CORRECTION, NOT USED WITH GUI, NOT UP-TO-DATE
         # ver 11.5.2022
         # TODO : Use estimate_dc to check if there is a significant dc-value,
         #        then remove it automatically before int_calibration and
@@ -386,19 +403,21 @@ class MainApp:
             self.myData.drawLineAbsorption()
         
         # CALC RELATIVE ABSORPTION
-        # edit : 2023-8-27
+        # edit : 2025-4-25
         # Compare to zero_reference data
         elif inputCommand == 'cab':
             print(" Calculating relative absorption... ")
             if 'filename' in kwargs:
                 file_name = kwargs['filename']
                 print(" Zero reference file: " + file_name)
-                self.myData.get_rel_abs_from_file(file_name)
-                self.myData.draw_rel_absorption(self.myData.rel_absorption)
-            else:
-                print(" Default zero reference file (see mini_settings.py)")
-                if(self.myData.get_rel_abs() != -1): # default file found
+                retval = self.myData.get_rel_abs_from_file(file_name)
+                if retval == 1:
                     self.myData.draw_rel_absorption(self.myData.rel_absorption)
+            else:
+                print(" No zero reference file defined! ")
+                # print(" Default zero reference file (see mini_settings.py)")
+                # if(self.myData.get_rel_abs() != -1): # default file found
+                #     self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # SAVE RELATIVE ABSORPTION
         # ver 20.5.2022
@@ -434,6 +453,7 @@ class MainApp:
             if(ret_val == 1):
                 print(" absorption saved in " + file_name)
 
+        # NOT USED WITH GUI, NOT UP-TO-DATE
         # READ ONE CHANNEL
         # edit 2023-12-15
         # TODO : Condsider combining 'one' with 'p'
@@ -443,12 +463,12 @@ class MainApp:
             ch_number = self.myData.waveLengthToChannel(int(wave_length))
             if(ch_number < 1):
                 print(' ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
-            elif (ch_number > settings.hw_channel_count):
+            elif (ch_number > self.hw_channel_count):
                 print(' ' + wave_length + ' nm is too LONG a wave length for the hardware.')
             else:
                 (ch_nr, ch_val) = self.myInstrument.getOneChannel(self.myData.waveLengthToChannel(int(wave_length)))
 
-        # edit 2024-3-20
+        # edit 2025-4-20
         # desc : Ask uc to measure a new spectrum and the to send the value of the channel matching the selected wavelength.
         #        -1 one used as bad value, and it can be coming also from the myInstrument.getOneChannel
         elif inputCommand == 'gui_first_ch':
@@ -461,7 +481,7 @@ class MainApp:
              
             if(ch_number < 1):
                 print(' ERROR: ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
-            elif (ch_number > settings.hw_channel_count):
+            elif (ch_number > self.hw_channel_count):
                 print(' ERROR:' + wave_length + ' nm is too LONG a wave length for the hardware.')
             else:
                 (ch_nr, ch_val) = self.myInstrument.GetFirstChannel(ch_number)
@@ -476,7 +496,7 @@ class MainApp:
             return (ch_nr, ch_val)
         
         # ANOTHER VALUE FROM MEASURED SPECTRUM
-        # edit : 2024-2-27
+        # edit : 2025-4-20
         # desc : Get another channel value from already measured spectrum.
         #        Use the timestamp of the first channel of this same spectrum data.
         elif inputCommand == 'gui_another_ch':
@@ -493,7 +513,7 @@ class MainApp:
 
             if(ch_number < 1):
                 print(' ERROR: ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
-            elif (ch_number > settings.hw_channel_count):
+            elif (ch_number > self.hw_channel_count):
                 print(' ERROR:' + wave_length + ' nm is too LONG a wave length for the hardware.')
             else:
                 (ch_nr, ch_val) = self.myInstrument.GetAnotherChannel(ch_number)
@@ -558,17 +578,16 @@ class MainApp:
             self.myMultiTimedData.ClearTimedData()
 
         # CHANGE SOURCE (LED) INTENSITY VIA GUI
-        # edit : 2025-2-16
+        # edit : 2025-4-20
         # desc : Save the new LED value in to the settings file, then send it to the instrument.
         elif inputCommand == 'gui_int':
             print(' Change LED intensity')
             if 'led_intensity' in kwargs:
                 LED_int = kwargs['led_intensity']
+
                 # save to file
-                try:
-                    fop.save_LED_intensity(LED_int)
-                except FileNotFoundError:
-                    print(f' Error in saving LED setting!')             
+                fop.update_settings_file("measurement", "hw_source_intensity", LED_int)
+                
                 # send to instrument
                 try:
                     new_LED_int = self.myInstrument.setSourceIntensity(LED_int)
