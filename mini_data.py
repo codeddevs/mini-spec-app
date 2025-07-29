@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2025-05-04
+# ver : 2025-07-29
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
@@ -77,7 +77,7 @@ class mini_data:
             #                     + 0.5)
 
     # method : waveLengthToChannel
-    # ver : 2025-4-20
+    # ver : 2025-7-29
     # desc : Convert a wave length to a channel number (1...288)
     #        Returns a channel number, not channel index!
     #        Returns channel number zero if wevelength is shorter than can be actually measured,
@@ -88,7 +88,7 @@ class mini_data:
 
         min_diff = 890 - 310
         min_diff_channel = 0
-        ch_count = int(fop.test_read_settings_file("device", "hw_channel_count"))
+        ch_count = int(fop.read_settings_file("device", "hw_channel_count"))
                  
         for i in range(1, ch_count + 1):
 
