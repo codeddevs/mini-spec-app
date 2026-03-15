@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2025-07-29
+# ver : 2025-08-06
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
@@ -132,14 +132,18 @@ class mini_data:
                 print(" No valid data to be used in DC remove!")
 
     # method : remove_any_dc
-    # ver : 3.6.2021
+    # edit : 2025-08-06
     # desc : Like removeDC but can be used for any spectrum (reference for example)
     def remove_any_dc(self, any_spectrum, dc):
-        try:
-            for i in range(len(any_spectrum)):
-                any_spectrum[i][1] = any_spectrum[i][1] - dc
-        except TypeError:
-            print(" No valid data to be used in DC remove!")
+        if(dc > 0):
+            try:
+                for i in range(len(any_spectrum)):
+                    any_spectrum[i][1] = any_spectrum[i][1] - dc
+                print(f' {dc} bit DC level removed.')
+            except TypeError:
+                print(" No valid data to be used in DC remove!")
+        else:
+            print(" Incorrect DC value. Can not be removed from the signal.")
 
     # method : estimate_dc
     # ver : 2023-9-2
@@ -479,7 +483,7 @@ class mini_data:
         return 1
 
     # method : get_rel_abs_from_file
-    # edit : 2025-4-25
+    # edit : 2025-08-06
     # desc : Calculates relative absorption spectrum using given reference file.
     #        Automatic DC-removal and filtration. Return 0 if no data, return 1 if successful
     # todo : Verify that this method does not alter the original spectrum data.
@@ -491,21 +495,23 @@ class mini_data:
             print(" ERROR: No data for absorption calculation!")
             return 0 #error
 
-        MIN_LEVEL = 20 # limits calculation to meaningfull areas to avoid abs noise peaks
+        MIN_LEVEL = 100 # limits calculation to meaningfull areas to avoid abs noise peaks
+        print(f' Absorption Signal Threshold: {MIN_LEVEL} bits')
         
         # copies of reference & data to work with 
-        self.loadZeroReference(zero_ref_file)
+        self.loadZeroReference(zero_ref_file)       # load reference data to self.zero_reference
         data_local_copy = copy.deepcopy(self.data)
 
         self.remove_any_dc(self.zero_reference, self.estimate_any_dc(self.zero_reference))
-        #self.removeDC(self.estimate_dc())
         self.remove_any_dc(data_local_copy, self.estimate_any_dc(data_local_copy))
-        
-        
-        #filter, no effect to original spectrum
-        f_reference = mini_temp.lowpass_filter(self.zero_reference)
-        #f_data = mini_temp.lowpass_filter(self.data)
-        f_data = mini_temp.lowpass_filter(data_local_copy)
+                
+        #filter or not?, no effect to original spectrum
+        if True:
+            f_reference = mini_temp.lowpass_filter(self.zero_reference)
+            f_data = mini_temp.lowpass_filter(data_local_copy)
+        else:
+            f_reference = self.zero_reference
+            f_data = data_local_copy
 
         if False:
             print("i=10...13")

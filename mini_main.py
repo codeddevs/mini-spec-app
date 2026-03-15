@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Coded Devices Oy
 #
 # file : mini_main.py
-# ver  : 2025-05-27
+# ver  : 2025-08-06
 # desc : Main file of the Mini Spectormeter Python3 application.
 #	 	 Communication with the hardware via FTDI VCP drivers.
 # TODO : - Correct intensity calibration so that highest point of the spectrum
@@ -25,11 +25,11 @@ import mini_defaults
 
 # VERSION
 # UPDATE THE VERSION NUMBER/DATE ONLY HERE
-app_version = "2025-05-26"
+app_version = "2025-08-05"
 
 class MainApp:
     
-    # edit 2025-5-26
+    # edit 2025-8-05
     def __init__(self):
         
         self.myData = mini_data()               # spectrum data
@@ -120,6 +120,11 @@ class MainApp:
         self.root.protocol('WM_DELETE_WINDOW', self.exit_app)
         print(f" Ready!")
         print('')
+
+        # Start terminal command thread
+        threading.Thread(target=self.terminal_command_loop, daemon=True).start()
+        
+        # Start the Tkinter event loop (GUI remains active until closed)
         self.root.mainloop()
 
        
@@ -134,6 +139,31 @@ class MainApp:
         self.myMultiTimedData.CloseTimedGraph()
         self.myData.CloseGraphs()
 
+    # TERMINAL OPERATION
+    # edit : 2025-08-06
+    # desc : Auxiliary method for sending commands via terminal input.
+    #        Intended for testing; may interfere with normal GUI operation.
+    #        When givin arguments use format keyword=value.
+    def terminal_command_loop(self):
+        print(f' Terminal control activated')
+        while True:
+            input_line = input(" command:")
+            if not input_line:
+                continue
+
+            line_parts = input_line.split()
+            command = line_parts[0]
+            kwargs = {}
+
+            # ARGUMENTS
+            for x in line_parts:
+                if '=' in x:
+                    key, value = x.split('=', 1)
+                    kwargs[key] = value
+            
+            # Dispatch command safely into the tkinter thread
+            # after() function expects no argument function --> lambda() function hides the arguments
+            self.root.after(0, lambda: self.GUI_callback(command, **kwargs))
 
     # Callback message from GUI
     # edit : 2024-3-27
@@ -238,7 +268,7 @@ class MainApp:
                 return ''
 
         # LOAD FROM FILE
-        # ver 2023-12-15
+        # ver 2025-08-06
         # desc : Use unit info to choose proper draw method. 
         #        Note! Does not work in VSCode environment.
         # todo : Select proper data type for returned spectrum (data or rel_absoption).
@@ -247,8 +277,9 @@ class MainApp:
         #        print "Wrong file name or file type!"
         #        
         elif inputCommand == 'l':
-            print(" Load from file")
-            file_name = kwargs['filename']
+            print(" Load from file " , end="")
+            #file_name = kwargs['filename']
+            file_name = kwargs.get('filename')
             print(file_name)
             #file_name = input("File name in folder " + settings.my_spectra_folder + " ?: ")
             tempData = []
@@ -332,10 +363,9 @@ class MainApp:
             print(" Z = %.2f" %XYZ[2])
 
         # REMOVE DC
-        # ver 31.3.2021
+        # edit : 2025-08-06
         elif inputCommand == 'd':
-            self.myData.removeDC(self.myData.estimate_dc())
-            #myData.remove_any_dc(myData.data, myData.estimate_any_dc(myData.data))
+            self.myData.remove_any_dc(self.myData.data, self.myData.estimate_any_dc(self.myData.data))
             self.myData.drawLineSpectrum()
 
         # elif inputCommand == 'm':

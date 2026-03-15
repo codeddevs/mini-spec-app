@@ -51,7 +51,7 @@ def save_settings(config, file_name):
         
 
 # func : read_file
-# rev. : 29.5.2022
+# edit : 2025-08-10
 # desc : Read spectrum or calibration data from a txt file.
 #        Spectrum data follows [spectrum] -header and ends by [End] -header
 #        Test if intensity data is int (raw spectrum) or float (calibration).
@@ -79,7 +79,7 @@ def read_file(fileName):
             header_found = True
         
         # check what unit is used
-        if('[%]' in line):
+        elif('[%]' in line):
             print(" Absorption spectrum found...")
             unit = '%'
         elif('[bits]' in line):
@@ -87,7 +87,8 @@ def read_file(fileName):
             unit = 'bits'
 		
         # parse data lines	
-        elif(line != '[end]\n' and line != '[Source]\n' and header_found == True):
+        #elif(line != '[end]\n' and line != '[Source]\n' and header_found == True):
+        elif(line != '[end]\n' and header_found == True):
             point = line.split()
             if (point[0].isdigit() and point[1].isdigit() and point[2].isdigit()): 
                 data.append([int(point[1]), int(point[2])])
