@@ -1,10 +1,11 @@
 # Copyright (c) 2025 Coded Devices Oy
 
 # file : mini_file_operations.py
-# edit : 2025-05-27
+# edit : 2026-04-06
 # desc : Reads and writes of the Mini Spec app
 # TODO : After reading the reference file name from the saved settings,
 #        then test that this filepath still points to a usable data.
+#        Add function for reading Time-D files
 
 import os
 import mini_defaults
@@ -49,13 +50,31 @@ def save_settings(config, file_name):
     except Exception as e:
         print(f" ERROR in saving settings. {e}")
         
+# READ FILE HEADER
+# edit : 2026-04-12
+# Desc : Checks if file contains a spectrum or Time Domain Data
+def read_file_header(file_name):
+    try:
+        with(open(file_name, 'r') as file):
+            for line in file:
+                line=line.strip()
+                if line == '[spectrum]':
+                    return line
+                elif line == '[Time Domain Values]':
+                    return line
+    except FileNotFoundError:
+        print(f' ERROR: {file_name} not found!')
+        return -1
+    except IsADirectoryError:
+        print(' ERROR: File name missing!')
+        return -1
+                    
 
 # func : read_file
-# edit : 2025-08-10
+# edit : 2026-04-12
 # desc : Read spectrum or calibration data from a txt file.
 #        Spectrum data follows [spectrum] -header and ends by [End] -header
 #        Test if intensity data is int (raw spectrum) or float (calibration).
-#	 	 Originally from spectral_product.py ver. 19.8.2018
 # todo : Create separate headers for calibration, background, reference and source files.
 #        Identify the spectrum type by unit [bits] or [%] and draw the y-axis accordingly.
 #
@@ -75,8 +94,14 @@ def read_file(fileName):
     print(' Reading file '+ fileName + ' ...')
     for line in file:
 		
+        # check header
+        # Correct Spectrum file
         if(line == '[spectrum]\n'):
             header_found = True
+        # Time Domain file 
+        elif(line == '[Time Domain Values]\n'):
+            print(f' Time D measurement found, but function is for spectrums.')
+            return (-1, 'T')     
         
         # check what unit is used
         elif('[%]' in line):
@@ -87,7 +112,6 @@ def read_file(fileName):
             unit = 'bits'
 		
         # parse data lines	
-        #elif(line != '[end]\n' and line != '[Source]\n' and header_found == True):
         elif(line != '[end]\n' and header_found == True):
             point = line.split()
             if (point[0].isdigit() and point[1].isdigit() and point[2].isdigit()): 
@@ -96,14 +120,65 @@ def read_file(fileName):
             elif (point[0].isdigit() and point[1].isdigit() and point[2].isdigit() != True):
                 data.append([int(point[1]), float(point[2])])
 
-        elif(line == '[end]\n' and header_found == True):
-            header_found = False
-			
-        elif(line == ''):
+        # end of file
+        elif(line == '[end]\n' or line == ''):
             break
 	
     file.close()
-    return data, unit
+
+    if header_found == True:
+        return data, unit
+    else: 
+        return -1, unit
+    
+# READ TIME DOMAIN FILE
+# edit: 2026-04-12
+# Desc: Read multi channel data file. Each data line: Ch1 Ch2 Ch3 Time
+def read_timed_file(file_name):
+     
+    timed_data=[]
+    header_found = False
+
+    try: 
+        print(f' Reading {file_name}...')
+        with open(file_name, "r") as timed_file:
+            
+            for line in timed_file:
+                    
+                # remove linechange etc.
+                line=line.strip()
+
+                # header
+                if line == '[Time Domain Values]':
+                    print(f' Time Domain measurement found...')
+                    header_found = True
+
+                # Channels
+                elif 'Ch' in line:
+                    pass
+                
+                # actual data lines
+                elif line != '[end]' and header_found == True:
+                    try:
+                        # read data line
+                        data_line = line.split()
+                        row = [(int(data_line[0])),
+                            (int(data_line[1])),
+                            (int(data_line[2])),
+                            (float(data_line[3]))]
+                        timed_data.append(row)
+                    except ValueError:
+                        print(f' ERROR in reading Time Domain Values from file {timed_file}')
+            
+                elif line == '[end]':
+                    break
+    except FileNotFoundError:
+        print(f' ERROR: file {file_name} not found!')
+
+    if header_found == True:
+        return timed_data
+    else:
+        return -1             
 
 # desc : Writea a new value in the settings file.
 # edit : 2025-05-08
