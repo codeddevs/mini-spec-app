@@ -1,7 +1,7 @@
-# Copyright (c) 2025 Coded Devices Oy
+# Copyright (c) 2026 Coded Devices Oy
 #
 # file : mini_main.py
-# ver  : 2025-08-06
+# ver  : 2026-05-14
 # desc : Main file of the Mini Spectormeter Python3 application.
 #	 	 Communication with the hardware via FTDI VCP drivers.
 # TODO : - Correct intensity calibration so that highest point of the spectrum
@@ -25,11 +25,11 @@ import mini_defaults
 
 # VERSION
 # UPDATE THE VERSION NUMBER/DATE ONLY HERE
-app_version = "2025-08-05"
+app_version = "2026-05-14"
 
 class MainApp:
     
-    # edit 2025-8-05
+    # edit 2026-04-10
     def __init__(self):
         
         self.myData = mini_data()               # spectrum data
@@ -43,38 +43,38 @@ class MainApp:
         # Print Start info
         print("")
         print(" *** Mini Spec *** ")
-        print(" Copyright (c) 2025 Coded Devices Oy")
+        print(" Copyright (c) 2026 Coded Devices Oy")
         print(" PC Software version " + app_version)
         print(" Connecting to hardware...")
         print("")
 
         # Read, test and save settings in .ini file to make sure all sections are found
         # and all keys have values.
-        # edit : 2025-5-26
-        settings = configparser.ConfigParser(comment_prefixes = "#") # ini file content
+        # edit : 2026-03-28
+        self.settings = configparser.ConfigParser(comment_prefixes = "#") # ini file content
         try:
-            settings = fop.load_settings(settings, fop.settigs_file_name)
+            self.settings = fop.load_settings(self.settings, fop.settigs_file_name)
         except FileNotFoundError as e:
             print(f"{e}")
             print(f" Creating a new {fop.settigs_file_name} with defaults!")
-        fop.test_settings(settings)
-        fop.save_settings(settings, fop.settigs_file_name)
+        fop.test_settings(self.settings)
+        fop.save_settings(self.settings, fop.settigs_file_name)
 
         # Get calibration coefficients from settings file
         # Edit : 2025-4-20
-        for key in settings['calibration']:
-            self.myData.CALIB[key] = float(settings["calibration"][key])
+        for key in self.settings['calibration']:
+            self.myData.CALIB[key] = float(self.settings["calibration"][key])
         self.myData.CheckCalib()
 
         # Connect to the instrument
-        # edit : 2025-4-19
+        # edit : 2026-04-10
         # desc : Connect to the instrument. Then 
         #        1) read back firmware version,
         #        2) Send LED intensity to the instrument,
         #        3) Send integration time to the instrument.  
         # todo : Separate error in returned LED value from old firmware not returning it.
-        connected = self.myInstrument.openPort()
-        if connected is True:
+        self.connected = self.myInstrument.openPort()
+        if self.connected is True:
 
             # BLINK LED
             self.myInstrument.blink(2)
@@ -84,9 +84,9 @@ class MainApp:
             print(" Firmware version : " + fw_version)
 
             # INIT LED INTENSITY
-            LEDi = int(settings["measurement"]["hw_source_intensity"])
+            LEDi = int(self.settings.get('measurement', 'hw_source_intensity'))
             if (LEDi < 0 or LEDi > 31):
-                LEDi = int(mini_defaults.DEFAULT_SETTINGS["measurement"]["hw_source_intensity"])
+                LEDi = int(mini_defaults.DEFAULT_SETTINGS['measurement']['hw_source_intensity'])
             new_LEDi = self.myInstrument.setSourceIntensity(LEDi)
             # requested LED intensity (but not returned because of old fw version or error)
             if (new_LEDi == -1):
@@ -96,9 +96,9 @@ class MainApp:
                 print(f' LED intensity : {new_LEDi}')
 
             # INIT INTEGRATION TIME
-            iTime = int(settings["measurement"]["hw_integration_time"])
+            iTime = int(self.settings.get('measurement','hw_integration_time'))
             if (iTime < 10 or iTime > 500):
-                iTime = int(mini_defaults.DEFAULT_SETTINGS["measurement"]["hw_integration_time"])
+                iTime = int(mini_defaults.DEFAULT_SETTINGS['measurement']['hw_integration_time'])
             new_iTime = self.myInstrument.setIntegrationTime(iTime)
             if(new_iTime != iTime):
                 print(f' ERROR in setting integration time!')
@@ -140,14 +140,15 @@ class MainApp:
         self.myData.CloseGraphs()
 
     # TERMINAL OPERATION
-    # edit : 2025-08-06
+    # edit : 2026-03-28
     # desc : Auxiliary method for sending commands via terminal input.
     #        Intended for testing; may interfere with normal GUI operation.
     #        When givin arguments use format keyword=value.
     def terminal_command_loop(self):
         print(f' Terminal control activated')
         while True:
-            input_line = input(" command:")
+            print( ' command:', end='', flush=True)
+            input_line = input().strip()
             if not input_line:
                 continue
 
@@ -163,18 +164,22 @@ class MainApp:
             
             # Dispatch command safely into the tkinter thread
             # after() function expects no argument function --> lambda() function hides the arguments
-            self.root.after(0, lambda: self.GUI_callback(command, **kwargs))
+            #self.root.after(0, lambda: self.GUI_callback(command, **kwargs))
+            
+            # Käytetään oletusarvoja (cmd=command), jotta muuttujat lukittuvat oikein
+            self.root.after(0, lambda cmd=command, kw=kwargs: self.GUI_callback(cmd, **kw))
 
     # Callback message from GUI
-    # edit : 2024-3-27
+    # edit : 2026-03-27
     # desc : Read command from inputCommand and possible keyword argument in kwargs
     def GUI_callback(self, inputCommand, **kwargs):
             
         if inputCommand == 'h':
             print("r : measure new spectrum")
             print("l : load saved spectrum")
+            print("ld : load Time Domain data")
             print("s : save spectrum") 
-            print("b : remove background (" + settings.my_spectra_folder + settings.background_file_name + ")")
+            print(f"b : remove background ({self.settings.get('files','background_file_name')})")
             print("a : add to average")
             print("sa : save average")
             print("ca : clear average")
@@ -183,8 +188,8 @@ class MainApp:
             print("m : find max")
             print("f : filter")
             print("p : point to source (continuous)")
-            print("n : intensity correction (" + settings.my_spectra_folder + settings.intensity_calib_file + ")")
-            print("o : get absorption using reference (" + settings.my_spectra_folder + settings.zero_reference_file + ")")
+            print(f"n : intensity correction ({self.settings.get('files', 'intensity_calib_file')})")
+            print(f"o : get absorption using reference ({self.settings.get('files', 'zero_reference_file')})")
             print("g : gain")
             print("cab : calculate relative absorption")
             print("sab : save relative absorption")
@@ -195,7 +200,9 @@ class MainApp:
             print("da : draw average in memory")
             print("dab : draw absorption in memory")
             print("clg : clear absolute graph")
-            print("clr : clear relative (absorption) graph")       
+            print("clr : clear relative (absorption) graph")
+            print("meas_in_memory : check if there is measurement data in memory")
+            print("abs_in_memory : check if there is absorption data in memory")      
             # for gui only 'ask_gui'
             # for gui only 'gui_int'
             # for gui only 'gui_itime'
@@ -208,6 +215,7 @@ class MainApp:
             # for gui only 'gui_save_timed'
             # for gui only 'gui_start_timer'
             # for gui only 'gui_stop_timer'
+            # for gui only 'gui_read_file_header'
             # 'gui_input_state'
             print("q : quit")
         
@@ -266,45 +274,102 @@ class MainApp:
                 return file_name
             else:
                 return ''
+            
+        # READ FILE HEADER
+        # edit : 2026-04-12
+        # desc : Use to identify file type before importing its data.
+        #        Return the header, None if missing.
+        elif inputCommand == 'gui_read_file_header':
+            
+            file_name = kwargs.get('filename')     
+            if not file_name:
+                print(f' ERROR: Missing file name!')
+                return None
+            
+            try:
+                header = fop.read_file_header(file_name)
+            except Exception as e:
+                print(f' ERROR in reading header of file {file_name}: {e}')
+                return None
+            
+            # Return know header
+            if header == '[spectrum]' or header == '[Time Domain Values]':
+                return header
+            else:
+                return None
+                    
 
         # LOAD FROM FILE
-        # ver 2025-08-06
+        # ver 2026-05-12
         # desc : Use unit info to choose proper draw method. 
         #        Note! Does not work in VSCode environment.
-        # todo : Select proper data type for returned spectrum (data or rel_absoption).
-        #        Test if deepcopy is required.
-        #        Error in drawing the spectrum may cause exception with misleading 
-        #        print "Wrong file name or file type!"
-        #        
         elif inputCommand == 'l':
-            print(" Load from file " , end="")
-            #file_name = kwargs['filename']
-            file_name = kwargs.get('filename')
-            print(file_name)
-            #file_name = input("File name in folder " + settings.my_spectra_folder + " ?: ")
+           
+            file_name = kwargs.get('filename')     
+            if not file_name:
+                print(f' Missing file name! Correct command: l filename=<filename>')
+                return -1
+            
             tempData = []
+
+            # THIS HELPS WITH TERMINAL COMMANDS BUT DOESN'T WORK WITH GUI COMMANDS
+            #folder = self.settings.get('files', 'my_spectra_folder')
+            #file_name = folder + file_name
+            
+            #print(f' Loading from file {file_name}')
             tempData, unit = fop.read_file(file_name)
-            #myData.data_file_name = file_name
+ 
+            # NOTE : fop.read_file() returns -1 if file is not found
+                        
             if tempData != -1: # error in reading file       
-                try:
-                    self.myData.data_file_name = file_name
+                try:   
                     # % 
                     if unit == '%':
+                        self.myData.rel_abs_file_name = file_name
                         self.myData.rel_absorption = tempData
                         self.myData.draw_rel_absorption(self.myData.rel_absorption)
                     # bits 
                     else:
+                        self.myData.data_file_name = file_name
                         self.myData.data = tempData
                         self.myData.drawLineSpectrum()
+
                     self.myData.added_to_average = False # can be added to average
 
+                    return self.myData.data_file_name
+
                 except TypeError: 
-                    print(" Wrong file name or file type!")
+                    print(" Wrong file type!")
+                    return -1
+        
+        # LOAD TIMED DATA
+        # ver : 2026-04-12
+        # Desc : Load Time Domain data, then tranfer data to object and make draw.
+        elif inputCommand == 'ld':
+            file_name = kwargs.get('filename')
+            if not file_name:
+                print(f' Missing file name! Correct command: ld filename=<filename>')
+                return -1
+            try:
+                tempData = fop.read_timed_file(file_name)
+                if tempData != -1:
+                    self.myMultiTimedData.ImportLoadData(tempData)
+                    try:
+                        self.myMultiTimedData.DrawTimedGraph()
+                    except TypeError as e:
+                        print(f' ERROR in drawing loaded TimeD data!')
+                        print(f'{e}')
+
+                    return file_name
+                
+            except TypeError:
+                print(f' ERROR in loading Time Domain Data from file {file_name}')
+                return -1
             
         # REMOVE BACKGROUND
-        # ver 19.8.2022
+        # ver : 2026-03-28
         elif inputCommand == 'b':
-            self.myData.removeBackground(settings.my_spectra_folder + settings.background_file_name)
+            self.myData.removeBackground(self.settings.get('files', 'background_file_name'))
             self.myData.drawLineSpectrum()
 
         # ADD A SPECTRUM TO AVERAGE
@@ -450,14 +515,16 @@ class MainApp:
                 #     self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # SAVE RELATIVE ABSORPTION
-        # ver 20.5.2022
+        # edit: 2026-05-13
         elif inputCommand == 'sab':
+            ret_val = 0
+            
             file_name = input("file name (empty for date-time name)?:")
             if(len(file_name) != 0):
-                file_name = settings.my_spectra_folder + file_name
+                file_name = self.settings.get('files','my_spectra_folder') + file_name
             else:
                 time_stamp = datetime.now()
-                file_name = settings.my_spectra_folder + time_stamp.strftime("%Y-%m-%d %H.%M.%S.txt")
+                file_name = self.settings.get('files', 'my_spectra_folder') + time_stamp.strftime("%Y-%m-%d %H.%M.%S.txt")
             file_comment = input("add comment ?: ")
             if len(file_comment) == 0:
                 file_comment = 'Relative absorption'
@@ -467,21 +534,28 @@ class MainApp:
             # check if successful        
             if(ret_val == 1):
                 print(" absorption saved in " + file_name)
+                self.myData.rel_abs_file_name = file_name
+                if self.myData.is_rel_abs_graph_open():
+                    self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # SAVE RELATIVE ABSORPTION - GUI VERSION
-        # edit 2023-10-6
+        # edit 2026-05-13
         # desc : give file name in input parameters ('gui_sab', filename='xxxx')
         elif inputCommand == 'gui_sab':
             file_name = kwargs['filename']
             file_comment = 'Relative absorption'
+            ret_val = 0
             if(len(self.myData.rel_absorption) > 1):
                 ret_val = fop.write_file(self.myData.rel_absorption, file_name, file_comment, '[%]')
             else:
                 print(' Error: No absorption data to save!')
 
-            # check if successful        
+            # check if successful update file name to Data object       
             if(ret_val == 1):
                 print(" absorption saved in " + file_name)
+                self.myData.rel_abs_file_name = file_name
+                if self.myData.is_rel_abs_graph_open():
+                    self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # NOT USED WITH GUI, NOT UP-TO-DATE
         # READ ONE CHANNEL
@@ -669,7 +743,7 @@ class MainApp:
         # DRAW AVERAGE IN MEMORY
         # ver 29.5.2022
         elif inputCommand == 'da':
-            print("Draw average in memory")
+            print(" Draw average in memory")
             if(len(self.myData.average) > 1):
                 self.myData.drawLineAverage()
             else:
@@ -678,17 +752,18 @@ class MainApp:
         # CLEAR ABSOLUTE GRAPH
         # edit : 2023-8-25
         elif inputCommand == 'clg':
-            print("Clearing the absolute graph...")
+            print(" Clearing the absolute graph...")
             self.myData.ClearLineSpectrum()
 
-        # CLEAR RELATIVE (ABSORPTION) GRAPH
+        # CLEAR RELATIVE (ABSORPTION) GRAPH AND DATA
         # edit : 2023-8-27
         elif inputCommand == 'clr':
-            print("Clearing the relative (absorption) grap...")
+            print(" Clearing the relative (absorption) graph and data...")
             self.myData.ClearRelAbsSpectrum()
             #self.myData.init_rel_graph()
 
         # ASK MEAS SOURCE
+        # Obsolete since 2026-04-06
         # edit : 2023-9-1
         elif inputCommand == 'ask_meas_file':
             print("send to gui : " + self.myData.data_file_name)
@@ -709,6 +784,16 @@ class MainApp:
                 return 'HIGH'
             else:
                 return 'ERROR'
+            
+        # CHECK IF MEASUREMENT DATA IN MEMORY
+        # edit : 2026-05-11
+        elif inputCommand == 'meas_in_memory':
+            return self.myData.Meas_in_memory()
+        
+        # CHECK IF ABSOPTION DATA IN MEMORY
+        # edit : 2026-05-11
+        elif inputCommand == 'abs_in_memory':
+            return self.myData.Abs_in_memory()
 
         # QUIT
         elif inputCommand == 'q':
@@ -720,7 +805,6 @@ class MainApp:
 
         else:
             print('Unknown command!')
-   
 
     # edit : 2024-3-15
     # desc : Interrupt handler for timer of the continuous measurement. 
