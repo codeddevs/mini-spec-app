@@ -1,7 +1,7 @@
-# Copyright (c) 2025 Coded Devices Oy
+# Copyright (c) 2026 Coded Devices Oy
 
 # Mini Spec App GUI
-# edit 2025-5-27
+# edit 2026-05-11
 # todo : 
 
 import tkinter
@@ -83,7 +83,7 @@ class GUI:
         self.notebook.add(page_meas, text=' MEAS ')
 
     # TAB 'ABSORP' for calculating absoption spectra
-    # edit : 2024-2-26
+    # edit : 2026-05-13
     def _initialize_tab_ABSORP(self):
         
 
@@ -104,32 +104,40 @@ class GUI:
         label_source_topic.grid(column=1, row=3, padx=5, pady=7)
         
         # measurement source
-        self.str_abs_meas_source = tkinter.StringVar(page_abs, '...')
+        self.str_abs_meas_source = tkinter.StringVar(page_abs, '(no measurement)')
         label_meas_source = ttk.Label(page_abs, textvariable=self.str_abs_meas_source)  
         label_meas_source.grid(column=2, row=3, padx=5, pady=7, sticky=W)
         #self.str_abs_meas_source.set(callback('ask_meas_file'))
 
-        # edit 2025-4-20
+        # edit 2026-05-13
         try:
-            #file_path = fop.read_zero_path(True) # True --> give warning if file missing
             file_path = fop.read_settings_file("files", "zero_reference_file")
-            file_path = self.cut_long_filename(file_path) # cut long file paths --> more readable
+            if file_path: 
+                file_path = self.cut_long_filename(file_path, 40)
+            else:
+                 #file_path is '' or None or missing
+                file_path = '<Not selected>'
         except TypeError:
-            file_path = ''
+            file_path = '<Not selected>'
             print(' Error: Reference filepath is not correct!')
+
+        # init reference file path str
         self.ref_file_name_var.set(file_path)
         
         button_change_file = ttk.Button(page_abs, text='Change', command= self.button_browse_file_click)
         button_change_file.grid(column=3, row=2, padx=5, pady=7)
 
-        button_calc_abs = ttk.Button(page_abs, text="CALC ABS", command=self.button_calc_abs_click)
-        button_calc_abs.grid(row=5, column=1, padx=5, pady=7, sticky=W)
+        self.button_calc_abs = ttk.Button(page_abs, text="CALC ABS", command=self.button_calc_abs_click)
+        self.button_calc_abs.grid(row=5, column=1, padx=5, pady=7, sticky=W)
 
-        button_save_abs = ttk.Button(page_abs, text='SAVE ABS', command=self.button_save_abs_click)
-        button_save_abs.grid(row=6, column=1, padx=5, pady=7, sticky=W)
+        self.button_save_abs = ttk.Button(page_abs, text='SAVE ABS', command=self.button_save_abs_click)
+        self.button_save_abs.grid(row=6, column=1, padx=5, pady=7, sticky=W)
+ 
+        self.button_clear_abs = ttk.Button(page_abs, text="CLEAR ABS", command=self.button_clear_abs_click)
+        self.button_clear_abs.grid(row=7, column=1, padx=5, pady=7, sticky=W)
 
-        button_clear_abs = ttk.Button(page_abs, text="CLEAR ABS", command=self.button_clear_abs_click)
-        button_clear_abs.grid(row=7, column=1, padx=5, pady=7, sticky=W)
+        self.update_abs_buttons()
+        
 
     # __init__ TAB 'TIME D' for time domain measurements of selected channels
     # edit : 2024-3-20
@@ -141,7 +149,7 @@ class GUI:
         # todo : user selectable number of channels 
         self.channel_list = []
         self.channel_count = 3 # this is the only place for setting the channel count
-        self.callback('gui_timed_ch_count', count=self.channel_count) # number of channels to main for a suitable data array
+        self.callback('gui_timed_ch_count', count=self.channel_count) # send number of channels to main for a suitable data array
 
         self.labelFr_chs = ttk.LabelFrame(page_timed, text='Channels')
         self.labelFr_chs.grid(row=1, column=1, padx=5, pady=7, sticky='NW')
@@ -161,13 +169,16 @@ class GUI:
             temp_label_after.grid(row=i+1, column=3, padx=5, pady=7, sticky=W)
                 
         self.button_read_chs = ttk.Button(page_timed, text='ONCE', command=self.button_read_chs_click)
-        self.button_read_chs.grid(row=5, column=2, padx=5, pady=7, sticky=W)
+        self.button_read_chs.grid(row=2, column=2, padx=5, pady=7, sticky=W)
+
+        self.button_load = ttk.Button(page_timed, text='LOAD', command=self.button_load_click)
+        self.button_load.grid(row=2, column=3, padx=5, pady=7, sticky=E)
 
         self.button_reset_serie = ttk.Button(page_timed, text='RESET', command=self.reset_serie_button_click)
-        self.button_reset_serie.grid(row=5, column=4, padx=5, pady=7, sticky=W)
+        self.button_reset_serie.grid(row=2, column=5, padx=5, pady=7, sticky=W)
 
         self.button_save = ttk.Button(page_timed, text='SAVE', command=self.save_timed_button_click)
-        self.button_save.grid(row=5, column=3, padx=5, pady=7, sticky=E)
+        self.button_save.grid(row=2, column=4, padx=5, pady=7, sticky=E)
 
         self.labelFr_continuous = ttk.LabelFrame(page_timed, text='Continuous')
         self.labelFr_continuous.grid(row=1, column=2, padx=5, pady=7, sticky='NW')
@@ -308,10 +319,13 @@ class GUI:
         self.notebook.grid(column=0, row=0, sticky=(N, W, S, E))
 
     # button_new event handler 
+    # desc : 2026-05-11
+    # TODO : Check if there is really data before writing 'New unsaved...' by using callback 'meas'
     def button_new_click(self):
         self.callback('r')
         self.str_meas_source.set('New unsaved measurement in memory!')
         self.str_abs_meas_source.set('New unsaved measurement')
+        self.update_abs_buttons()
 
     # button clear of the MEAS-page event handler
     # desc: Clears only the graph not the memory --> spectrum can be drawn again
@@ -337,16 +351,22 @@ class GUI:
         self.callback('gui_itime', time = int(self.str_itime.get()))
 
     # button_load event handler
-    # edit : 2023-9-22
-    # desc : Windows tracks well previous file paths used.
+    # edit : 2026-05-11
+    # desc : For loading saved data. Common to MEAS and TIMED tabs. Uses gui_read_file_header to identify data type,
+    #        spectrum or time domain. Then calls proper reading function.
     def button_load_click(self):
         load_name = filedialog.askopenfilename(title="Select file", filetypes=(("txt files", "*.txt"), ("all files", "*.*")))
         if load_name !='':
-            self.callback('l', filename = load_name)
-            f = self.callback('ask_meas_file')
-            #f = self.cut_long_filename(f)
-            self.str_abs_meas_source.set(f)
-            self.str_meas_source.set(f)
+            header = self.callback('gui_read_file_header', filename=load_name)
+            if header == '[spectrum]':
+                f = self.callback('l', filename = load_name)
+                #f = self.callback('ask_meas_file')
+                f = self.cut_long_filename(f, 40)
+                self.str_abs_meas_source.set(f)
+                self.str_meas_source.set(f)
+            elif header == '[Time Domain Values]':
+                f = self.callback('ld', filename = load_name)
+        self.update_abs_buttons()
 
     # button_save event handler
     # edit : 2023-10-6
@@ -367,8 +387,9 @@ class GUI:
         self.callback('clg')
 
     # button_browse_file_click event handler
-    # edit : 2025-4-20
-    # desc : Saves automatically the selected file path in the settings file.
+    # edit : 2026-05-15
+    # desc : Used to select the reference file in the ABSORP tab 
+    #        Saves automatically the selected file path in the settings file.
     def button_browse_file_click(self):
         zero_file = filedialog.askopenfilename(title = "Select file", filetypes = (("txt files", "*.txt"),("all files", "*.*")))
         
@@ -376,10 +397,11 @@ class GUI:
             self.ref_file_name_var.set('')
             #fop.save_zero_path(zero_file)
             fop.update_settings_file("files", "zero_reference_file", zero_file)
-            self.ref_file_name_var.set(self.cut_long_filename(zero_file))
+            self.ref_file_name_var.set(self.cut_long_filename(zero_file, 40))
+        self.update_abs_buttons()
 
     # button_calc_abs_click event handler
-    # edit : 2025-5-23
+    # edit : 2026-05-13
     # desc : If file path is OK, calls absorption calculation in mini_main.py.
     def button_calc_abs_click(self):
        
@@ -390,6 +412,8 @@ class GUI:
         else:
             print(f" ERROR: Reference file {ref_file} was not found!")  
 
+        self.update_abs_buttons()
+
     # button_save_abs_click event handler
     # edit : 2023-10-6
     def button_save_abs_click(self):
@@ -399,9 +423,10 @@ class GUI:
         self.callback('gui_sab', filename = save_name)
 
     # button clear_abs event handler
-    # edit : 2023-8-27
+    # edit : 2026-05-14
     def button_clear_abs_click(self):
         self.callback('clr')
+        self.update_abs_buttons()
 
     # button add_to_ave event handler
     # edit : 2023-9-8
@@ -469,14 +494,21 @@ class GUI:
         return True
 
     # 
-    # edit : 2023-9-29
-    # desc : Remove the beginning of a very long filepath.
-    def cut_long_filename(self, name, max=80):
-        if(len(name) > max):
-            start_index = len(name) - max
-            short_name = '...' + name[start_index:]
-            return short_name
-        else:
+    # edit : 2026-05-15
+    # desc : Remove the beginning of long filepath.
+    #        Data class has own similar copy of this.
+    def cut_long_filename(self, name, max=40):
+        try:
+            if(len(name) > max):
+                start_index = len(name) - max
+                while(name[start_index] != '/'):
+                    start_index -= 1
+                short_name = '...' + name[start_index:]
+                return short_name
+            else:
+                return name
+        except TypeError:
+            print(f' ERROR in function cut_long_filename')
             return name
         
     # update version string
@@ -601,6 +633,31 @@ class GUI:
     def button_test_input_click(self):
         state = self.callback('gui_input_state')
         self.str_test_input.set(state)
+
+    # Control functionality of ABS related buttons
+    # edit : 2026-05-14       
+    # TODO : SAVE ABS BUTTON CHECK IS NOT WORKING
+    def update_abs_buttons(self):
+        #print(f' button_update_called!')
+
+        # CALC ABS BUTTON STATE
+        if self.callback('meas_in_memory') and self.ref_file_name_var.get() != '<Not selected>':        
+            self.button_calc_abs.config(state=tkinter.NORMAL)
+        else:
+            self.button_calc_abs.config(state=tkinter.DISABLED)
+
+        # SAVE ABS BUTTON STATE
+        if self.callback('abs_in_memory'):
+            self.button_save_abs.config(state=tkinter.NORMAL)
+        else:
+            self.button_save_abs.config(state=tkinter.DISABLED)
+
+        # CLEAR ABS BUTTON STATE
+        if self.callback('abs_in_memory'):
+            self.button_clear_abs.config(state=tkinter.NORMAL)
+        else:
+            self.button_clear_abs.config(state=tkinter.DISABLED)
+
 
 # edit : 2023-12-15
 if __name__ == "__main__":
