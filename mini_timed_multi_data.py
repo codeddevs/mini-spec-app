@@ -1,8 +1,9 @@
-# Copyright (c) 2025 Coded Devices Oy
-# edit : 2025-1-17
+# Copyright (c) 2026 Coded Devices Oy
+# edit : 2026-04-12
 # desc : Class for timeseries of multiple channel values.
 import time
 import matplotlib.pyplot as plt
+import copy
 
 class mini_timed_multi_data:
 
@@ -12,7 +13,7 @@ class mini_timed_multi_data:
                                 # all values in a row are from the same spectrum --> same timestamp
                                 # note ch_i is not the actual channel number (of the corresponding wavelength) but an index
                                 # latest value (highest timestamp) will be added to the end of the array
-        
+
         self.ChWavelength = [0] * channel_count  # array of wavelengths in order of corresponding channel index
         
         # set ch_count only once & only here (1...9)
@@ -99,7 +100,7 @@ class mini_timed_multi_data:
         self.ts_count = 0
         self.startTime = 0
 
-    # edit : 2025-2-16
+    # edit : 2026-04-12
     # desc : Input parameter b defines if the graph blocks the progress of the program.
     # todo : Check if there is any benefit of using interactive mode plt.ion() 
     def DrawTimedGraph(self, b=False):
@@ -122,7 +123,14 @@ class mini_timed_multi_data:
             ch_data = [x[i] for x in self.timed_data]
             time_data = [x[self.ch_count] for x in self.timed_data]
             plt.plot(time_data, ch_data, plot_styles[i])
-            legends.append(self.ChWavelength[i] + ' nm')
+
+            # is real wavelength info available for legend
+            try:
+                float(self.ChWavelength[i])
+                legends.append(self.ChWavelength[i] + ' nm')
+            except ValueError:
+                legends.append(self.ChWavelength[i])
+
         plt.legend(legends)   
         plt.show(block=b)
 
@@ -150,6 +158,21 @@ class mini_timed_multi_data:
             print(' ERROR in calling SubtractStartTime method!')
             return time
 
+    # edit : 2026-04-12
+    # desc : Import loaded data and handle related data properly
+    # NOTE : This version adds same number of channels as in start of the instance.
+    #        This version can not add correct channel wavelengths. They were not saved during this edit.
+    def ImportLoadData(self, load_data):
+        try:
+            self.timed_data = copy.deepcopy(load_data)
+            self.ChWavelength = [0] * self.ch_count
+            self.ChWavelength[0] = 'Ch1' # dummy
+            self.ChWavelength[1] = 'Ch2'
+            self.ChWavelength[2] = 'Ch3'
+            self.ts_count = len(self.timed_data)
+            self.startTime = float(self.timed_data[0][3])
+        except TypeError:
+            print(f' ERROR in importing Time Domain data from file!')
 
 # unit test
 # edit: 2024-2-9
