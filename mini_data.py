@@ -1,7 +1,7 @@
-# Copyright (c) 2025 Coded Devices Oy
+# Copyright (c) 2026 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2025-08-06
+# ver : 2026-05-13
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
@@ -15,7 +15,7 @@ import mini_defaults
 
 class mini_data:
         
-    # edit 2025-4-20
+    # edit 2026-05-12
     def __init__ (self):
         self.data = []              # Warning! data array can contain modified data, ch numbers or wavelengths.
         self.background = []        # Refrence background signal that can be subtracted from measurement. 
@@ -25,7 +25,8 @@ class mini_data:
         self.zero_reference = []    # spectrum with zero thickness absorption material
         self.absorption = []        # absorption spectrum = zero_reference - data through material
         self.rel_absorption = []    # relative absoprtion spectrum = (zero_reference - sample) / zero_reference * 100
-        self.data_file_name = ""    # include in plots
+        self.data_file_name = ""    # measured spectrum file to include in plots
+        self.rel_abs_file_name = "" # calculated absorption file to include in plots
         self.added_to_average = False   # result already added to average spectrum
         self.CALIB = {              # wavelength calibration coefficients
             "a0" : None,
@@ -237,7 +238,7 @@ class mini_data:
         plt.show()
 
 	# method : drawLineSpectrum
-	# ver : 2025-2-15
+	# ver : 2026-05-12
 	# desc : Simple line spectrum
 	#        Draw absolute spectrums into figure "ABSOLUTE GRAPH"
     #        This name identifies the graph instead of ID number.   
@@ -264,7 +265,7 @@ class mini_data:
         except ValueError:
             print(" Error: Scaling of the plot failed!")
 
-        plt.suptitle("" + self.data_file_name)
+        plt.suptitle("" + self.cut_long_filename(self.data_file_name))
         plt.xlabel("wavelength [nm]")
         plt.ylabel("intensity [bit]")
         plt.grid(True)
@@ -483,12 +484,11 @@ class mini_data:
         return 1
 
     # method : get_rel_abs_from_file
-    # edit : 2025-08-06
+    # edit : 2026-05-13
     # desc : Calculates relative absorption spectrum using given reference file.
     #        Automatic DC-removal and filtration. Return 0 if no data, return 1 if successful
     # todo : Verify that this method does not alter the original spectrum data.
     #        Combine with get_rel_abs method.
-    
     def get_rel_abs_from_file(self, zero_ref_file):
     
         if len(self.data) < 1:
@@ -523,6 +523,7 @@ class mini_data:
         try:
 
             self.rel_absorption = []    # delete previous content
+            self.rel_abs_file_name = ''
 
             for i in range(len(f_data)):
                 ref_int = f_reference[i][1]
@@ -570,7 +571,7 @@ class mini_data:
         plt.show()    
         
     # method : draw_rel_absorption
-    # ver : 19.8.2022
+    # edit : 2026-05-12
     # desc : draw relative values with %-unit into "RELATIVE GRAPH"
     def draw_rel_absorption(self, any_spectrum):
         plt.figure("RELATIVE GRAPH")
@@ -587,10 +588,15 @@ class mini_data:
             print(" Wrong data type in draw!")
             plt.ylim(0, 100)
         plt.grid(True)
-        plt.suptitle("" + self.data_file_name)
+        plt.suptitle("" + self.cut_long_filename(self.rel_abs_file_name))
         plt.xlabel("wavelength [nm]")
         plt.ylabel("relative absorption [%]")
         plt.show()
+
+    # Check if graph is open in case changes (like file name)
+    # edit : 2026-05-13
+    def is_rel_abs_graph_open(self):
+        return plt.fignum_exists("RELATIVE GRAPH")
 
     # method : init_rel_graph
     # edit : 2023-8-27
@@ -606,13 +612,16 @@ class mini_data:
         plt.show()
 
     # method : ClearRelAbsSpectrum
-    # edit : 2023-9-22
+    # edit : 2026-05-14
+    # desc : Clears the abs spectrum and erases the abs data from memory
     def ClearRelAbsSpectrum(self):
         if plt.fignum_exists('RELATIVE GRAPH'):
             plt.close('RELATIVE GRAPH')
+            self.rel_absorption = []
             print('Done!')
         else:
-            print('Nothing to clear.')
+            print('No graph to clear.')
+            self.rel_absorption = []
 
     # method : get_max_intensity
     # ver : 1.11.2020
@@ -640,7 +649,46 @@ class mini_data:
 
         if plt.fignum_exists('ABSOLUTE GRAPH'):
             plt.close('ABSOLUTE GRAPH')
-        
+
+    # CHECK IF THERE IS MEASUREMENT DATA
+    # edit : 2026-05-11
+    def Meas_in_memory(self):
+        try:
+            if len(self.data) > 1:
+                return True
+            else:
+                return False
+        except Exception as e:
+            print(f'{e}')
+    
+    # CHECK IF THERE IS RELATIVE ABSORPTION DATA
+    # edit : 2026-05-14
+    def Abs_in_memory(self):
+        try:
+            if len(self.rel_absorption) > 1:
+                #print(f' len absorption = {len(self.rel_absorption)}')
+                return True
+            else:
+                return False
+        except Exception as e:
+            print(f'{e}')
+
+    # edit : 2026-04-06
+    # desc : Remove the beginning of long filepath.
+    #        GUI class has own similar copy of this. 
+    def cut_long_filename(self, name, max=40):
+        try:
+            if(len(name) > max):
+                start_index = len(name) - max
+                while(name[start_index] != '/'):
+                    start_index -= 1
+                short_name = '...' + name[start_index:]
+                return short_name
+            else:
+                return name
+        except TypeError:
+            print(f' ERROR in function cut_long_filename')
+            return name
 
 # unit test main
 # ver 2025-4-20
