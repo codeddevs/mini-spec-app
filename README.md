@@ -17,8 +17,11 @@ Ready-to-run Windows standalone versions from version 1.2 onwards are available 
 These versions do not require a separate Python installation and can be used directly on Windows systems.
 
 ### Source Code
+
+The main branch contains the latest development versions, which may be newer and less thoroughly tested than the latest release.
+
 If you want to run or modify the software yourself, you can download individual Python files directly or clone the repository using Git.
 
 Once you have the files, feel free to explore the code and provide feedback by leaving comments or suggestions in the Issues section. We value your input and look forward to hearing from you!
 
-You can send comments to : info@codeddevs.com
+You can send comments to: info@codeddevs.com
