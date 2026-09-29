@@ -1,7 +1,7 @@
-# Copyright (c) 2025 Coded Devices Oy
+# Copyright (c) 2026 Coded Devices Oy
 
 # file : mini_file_operations.py
-# edit : 2026-04-06
+# edit : 2026-08-03
 # desc : Reads and writes of the Mini Spec app
 # TODO : After reading the reference file name from the saved settings,
 #        then test that this filepath still points to a usable data.
@@ -71,7 +71,7 @@ def read_file_header(file_name):
                     
 
 # func : read_file
-# edit : 2026-04-12
+# edit : 2026-08-03
 # desc : Read spectrum or calibration data from a txt file.
 #        Spectrum data follows [spectrum] -header and ends by [End] -header
 #        Test if intensity data is int (raw spectrum) or float (calibration).
@@ -112,13 +112,23 @@ def read_file(fileName):
             unit = 'bits'
 		
         # parse data lines	
+        # elif(line != '[end]\n' and header_found == True):
+        #     point = line.split()
+        #     if (point[0].isdigit() and point[1].isdigit() and point[2].isdigit()): 
+        #         data.append([int(point[1]), int(point[2])])      
+        #     elif (point[0].isdigit() and point[1].isdigit() and point[2].isdigit() != True):
+        #         data.append([int(point[1]), float(point[2])])
+
+        # edit : 2026-08-03
         elif(line != '[end]\n' and header_found == True):
-            point = line.split()
-            if (point[0].isdigit() and point[1].isdigit() and point[2].isdigit()): 
-                data.append([int(point[1]), int(point[2])])
-            
-            elif (point[0].isdigit() and point[1].isdigit() and point[2].isdigit() != True):
-                data.append([int(point[1]), float(point[2])])
+            try:
+                point = line.split()
+                index = int(point[0])
+                wavelength = round(float(point[1]), 1)
+                intensity = round(float(point[2]), 1)
+                data.append([wavelength, intensity])
+            except ValueError:
+                print(f' ERROR in reading data from file!')
 
         # end of file
         elif(line == '[end]\n' or line == ''):
@@ -316,7 +326,7 @@ def write_int_file(data, file_name, comment):
 	new_file.close()
 
 # func : write_file
-# ver : 20.5.2022
+# ver : 2026-09-11
 # Desc: Checks if the instensity data is float or int and writes accordingly.
 #       Returns -1 if no data to write.
 #       Returns 1 after writing data.
@@ -325,21 +335,21 @@ def write_file(data, file_name, comment, unit = '[bits]'):
     new_file = open(file_name, 'w')
     new_file.write(str(comment) + '\n')
     new_file.write('[spectrum]\n')
-    #new_file.write('[ch]\t[nm]\t[bits]\n')
     new_file.write('[ch]\t[nm]\t' + unit +'\n')
 
-    #check if there is any data to save
+    # check if there is any data to save
     if len(data) == 0:
         print(" Error: No data to save!")
         return -1
     
-    #check if intensity value is integer or float
+    # intensity is integer
     if isinstance(data[0][1], float):
         for i in range(0,len(data)):
-            new_file.write('%i\t%i\t%.4f\n' %(i+1, data[i][0], data[i][1])) # 1st column is ch nr, not index!
+            new_file.write('%i\t%.1f\t%.1f\n' %(i+1, data[i][0], data[i][1])) # 1st column is ch nr, not index!
+    # intensity is float
     elif isinstance(data[0][1], int):
         for i in range(0, len(data)):
-            new_file.write('%i\t%i\t%i\n' %(i+1, data[i][0], data[i][1]))
+            new_file.write('%i\t%.1f\t%i\n' %(i+1, data[i][0], data[i][1])) # 1st column is ch nr, not index!
 
     new_file.write('[end]\n')
     new_file.close()

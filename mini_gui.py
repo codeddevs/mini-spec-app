@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Coded Devices Oy
 
 # Mini Spec App GUI
-# edit 2026-05-11
+# edit 2026-09-29
 # todo : 
 
 import tkinter
@@ -18,6 +18,108 @@ import importlib
 import mini_file_operations as fop
 import mini_defaults
 
+
+# edit : 2026-09-29
+# desc : Creates a dialog for measurement settings.
+#   in : Parent is the window that owns this dialog.
+#   in : start_callback if the function in callin object that is used to launch a measurement
+
+class NewMeasurementDialog(tkinter.Toplevel):
+    def __init__(self, parent, start_callback):             
+        super().__init__(parent)                            # initialize the inherited tkinter.Toplevel
+
+        
+        self.start_callback = start_callback
+
+        self.title("Measurement Series")
+        self.geometry("220x150")
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", self.hide)
+
+        bg = self.cget("bg") # get background color of the window
+        
+        close_button = ttk.Button(self, text='START', command=self.start)
+        close_button.grid(row=6, column=1, columnspan=2, padx=5, pady=15)
+
+        # NUMBER OF SIGNALS
+        self.label_signals = ttk.Label(self, text = "Number of Signals (1-10):", background=bg)
+        self.label_signals.grid(row=3, column=1, padx=(10, 3), pady=7, sticky=E)
+
+        self.str_signals = tkinter.StringVar(self, value="1")
+        
+        self.entry_signals = ttk.Entry(self, textvariable=self.str_signals, width=2, validate='focusout', validatecommand=self.check_number)
+        self.entry_signals.grid(row=3, column=2, padx=(4, 5), pady=7, sticky=W)
+
+        # CREATE AVERAGE
+        self.label_average = ttk.Label(self, text = "Create average (Y/N):", background=bg)
+        self.label_average.grid(row=4, column=1, padx=(10, 3), pady=7, sticky=E)
+
+        self.var_activate_averaging = tkinter.BooleanVar(self, value = True)
+
+        self.style = ttk.Style()
+        self.style.configure("my_style.TCheckbutton", background = bg)
+        self.style.map("my_style.TCheckbutton", background=[("active", bg), ("selected", bg), ("!active", bg)])
+
+        self.check_average = ttk.Checkbutton(self, variable=self.var_activate_averaging, takefocus=False, style="my_style.TCheckbutton")
+        self.check_average.grid(row=4, column=2, padx=(4, 5), pady=7, sticky=W)
+
+    # edit : 2026-09-22
+    # desc : Validate the input of "Number of Signals" field
+    def check_number(self) -> None:
+        try:
+            number = int(self.str_signals.get())
+            if number < 1:
+                number = 1
+            elif number > 10:
+                number = 10
+
+        except ValueError:
+            number = 1
+        
+        self.str_signals.set(str(number))
+
+    # edit : 2026-09-22
+    # desc : Return Number of signals as INT. 
+    #        Use 1 as fallback value in case of value exception.
+    def get_signals_number(self) -> int:
+        try:
+            number = int(self.str_signals.get())
+        except ValueError:
+            print(f' Error in reading number of signals')
+            number = 1
+            # refresh the visible value
+            self.str_signals.set(str(number))
+        
+        return number
+
+    # edit : 2026-09-04
+    def is_averaging(self) -> bool:
+        return self.var_activate_averaging.get()
+
+    # edit : 2026-09-25
+    # desc : Opens dialog for measurement settings.
+    def show(self):
+        self.update_idletasks()
+
+        # location     
+        parent = self.master
+        x = parent.winfo_x() + 50  
+        y = parent.winfo_y() + 50
+        self.geometry(f"+{x}+{y}")
+
+        self.deiconify()    # show dialog
+        self.lift()         # on top 
+
+    # edit : 2026-09-04
+    def hide(self):
+        self.withdraw()
+
+    # edit :2026-09-25
+    def start(self):
+        self.hide()
+        self.start_callback()
+        
+        
 
 # edit : 2025-4-24
 class GUI:
@@ -46,8 +148,12 @@ class GUI:
         self._initialize_tab_TIMED()                       
         self._initialize_tab_SETTINGS()
         self._initialize_tab_TEST()
-    # END OF __init__ ***
-        
+
+        # NEW MEASUREMENT DIALOG, keep hidden
+        self.meas_dlg = NewMeasurementDialog(self.root, self.callback_start_new)
+        self.meas_dlg.withdraw()
+
+           
     # TAB 'MEAS' for making and loading measurements
     # edit : 2023-9-15
     def _initialize_tab_MEAS(self):
@@ -319,10 +425,31 @@ class GUI:
         self.notebook.grid(column=0, row=0, sticky=(N, W, S, E))
 
     # button_new event handler 
-    # desc : 2026-05-11
-    # TODO : Check if there is really data before writing 'New unsaved...' by using callback 'meas'
+    # desc : 2026-09-04
     def button_new_click(self):
-        self.callback('r')
+
+        self.meas_dlg.show()
+
+    # edit : 2026-09-22
+    # desc : Call back function for the new measurement dialog.
+    def callback_start_new(self):
+
+        count = self.meas_dlg.get_signals_number()
+
+        # averaging
+        if self.meas_dlg.is_averaging():
+            self.callback('gui_ave', number=count)
+    
+        # no averaging, just repeated measurements
+        else:
+            total_nr = count
+            print(f' Measuring {total_nr} signals...')
+
+            while count > 0:
+                print(f'\n measuring {total_nr - count + 1} / {total_nr}')
+                self.callback('r')
+                count -= 1
+
         self.str_meas_source.set('New unsaved measurement in memory!')
         self.str_abs_meas_source.set('New unsaved measurement')
         self.update_abs_buttons()

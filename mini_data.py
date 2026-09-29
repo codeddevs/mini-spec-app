@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2026-05-13
+# ver : 2026-09-11
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
@@ -12,12 +12,19 @@ import mini_file_operations as fop
 import copy
 import mini_temp
 import mini_defaults
+from dataclasses import dataclass
 
 class mini_data:
         
-    # edit 2026-05-12
+    # edit 2026-07-27
+    # TODO : Move minimum and maximum wavelengths into default settings
     def __init__ (self):
+        
+        self.MIN_WL_CONST = 310     # Minimum wl of the detected spectrum
+        self.MAX_WL_CONST = 890     # Maximum wl of the detected spectrum
+        self.channel_count = int(fop.read_settings_file("device", "hw_channel_count"))
         self.data = []              # Warning! data array can contain modified data, ch numbers or wavelengths.
+        self.bins = []              # Data in wavelength bins matching channel widths.
         self.background = []        # Refrence background signal that can be subtracted from measurement. 
         self.average = []
         self.ave_size = 0		    # this many spectras have been accumulated into average
@@ -27,7 +34,7 @@ class mini_data:
         self.rel_absorption = []    # relative absoprtion spectrum = (zero_reference - sample) / zero_reference * 100
         self.data_file_name = ""    # measured spectrum file to include in plots
         self.rel_abs_file_name = "" # calculated absorption file to include in plots
-        self.added_to_average = False   # result already added to average spectrum
+        self.added_to_average = False   # has spectrum currently in memory been already added to average spectrum
         self.CALIB = {              # wavelength calibration coefficients
             "a0" : None,
             "b1" : None,
@@ -36,7 +43,8 @@ class mini_data:
             "b4" : None,
             "b5" : None
         }
-    
+
+       
     # method : CheckCalibCoeffs
     # edit : 2025-4-19
     def CheckCalib(self):
@@ -52,75 +60,83 @@ class mini_data:
             print("ready!")
 
     # method : channelToWavelength
-	# edit : 2025-4-20
+	# edit : 2026-08-03
 	# desc : Convert channel (pix) number 1...288 to wavelength using factory calibration data.
     #        In data[][] array overwrite channel numbers with wavelengths. 
     #        Factory calibration data is found in the sensor datasheet.
-    #        Last addition of 0.5 is for correct rounding in float --> int conversion.
+    #        Now using float rounded to 0.1 nm resolution. Previously used integer rounding may produce identical 
+    #        center wavelengths for adjacent channels at the long-wavelength end of the spectrum.
 	#
     def channelToWavelength(self):
         for i in range(len(self.data)):
             x = self.data[i][0]
-            self.data[i][0] = int(self.CALIB["a0"] \
+                        
+            # center wavelength with one decimal accuracy
+            self.data[i][0] = round(self.CALIB["a0"] \
                                   + x * self.CALIB["b1"] \
                                   + x**2 * self.CALIB["b2"] \
                                   + x**3 * self.CALIB["b3"] \
                                   + x**4 * self.CALIB["b4"] \
-                                  + x**5 * self.CALIB["b5"] \
-                                  + 0.5)
-
-            # self.data[i][0] = int(mini_settings.calib_a0 \
-            #                     + x * mini_settings.calib_b1 \
-            #                     + x**2 * mini_settings.calib_b2 \
-            #                     + x**3 * mini_settings.calib_b3 \
-            #                     + x**4 * mini_settings.calib_b4 \
-            #                     + x**5 * mini_settings.calib_b5 \
-            #                     + 0.5)
-
-    # method : waveLengthToChannel
-    # ver : 2025-7-29
-    # desc : Convert a wave length to a channel number (1...288)
+                                  + x**5 * self.CALIB["b5"], 1)
+    # edit : 2026-08-04
+    # desc : input channel number NOT index --> 
+    #        return the center wavelength with one decimal accuracy        
+    def oneChannelToWavelength(self, channel):
+        
+        return round(self.CALIB["a0"] \
+                    + channel * self.CALIB["b1"] \
+                    + channel**2 * self.CALIB["b2"] \
+                    + channel**3 * self.CALIB["b3"] \
+                    + channel**4 * self.CALIB["b4"] \
+                    + channel**5 * self.CALIB["b5"], 1)
+            
+    # edit : 2026-08-04
+    # desc : Convert a wavelength to a channel number (1...288)
     #        Returns a channel number, not channel index!
-    #        Returns channel number zero if wevelength is shorter than can be actually measured,
+    #        Returns channel number zero if wevelength is shorter than can be actually measured;
     #        channel number 0 does not exist!
-    #        Returns channel number hw_channel_count + 1 (289) if wavelength is longer than can be 
-    #        actually measured, that channel (289) does not exist!
-    def waveLengthToChannel(self, any_wave_length):
+    #        Returns channel number channel_count + 1 (289) if wavelength is longer than can be 
+    #        actually measured; that channel (289) does not exist!
+    #        Speed up repeated searches by starting from the previously found channel, 
+    #        instead of channel nr 1.
+    # 
+    def wavelengthToChannel(self, wavelength, start_channel=1):
 
-        min_diff = 890 - 310
+        min_diff = float("inf")
         min_diff_channel = 0
-        ch_count = int(fop.read_settings_file("device", "hw_channel_count"))
+        channels_over = 0   # channels searched after the found minimum, used as a safety margin
+
+        # check if wavelength is outside of expected range
+        if wavelength < self.MIN_WL_CONST:
+            return 0
+        if wavelength > self.MAX_WL_CONST:
+            return self.channel_count + 1
                  
-        for i in range(1, ch_count + 1):
-
-            w = int(self.CALIB["a0"] \
-                + i * self.CALIB["b1"] \
-                + i**2 * self.CALIB["b2"] \
-                + i**3 * self.CALIB["b3"] \
-                + i**4 * self.CALIB["b4"] \
-                + i**5 * self.CALIB["b5"] \
-                + 0.5) 
-
-            # w = int(mini_settings.calib_a0 \
-            #     + i * mini_settings.calib_b1 \
-            #     + i**2 * mini_settings.calib_b2 \
-            #     + i**3 * mini_settings.calib_b3 \
-            #     + i**4 * mini_settings.calib_b4 \
-            #     + i**5 * mini_settings.calib_b5
-            #     + 0.5)
-
-            diff = abs(any_wave_length - w)
+        for channel in range(start_channel, self.channel_count + 1):
+            
+            # center wavelength of each channel with one decimal
+            cw = round(self.CALIB["a0"] \
+                + channel * self.CALIB["b1"] \
+                + channel**2 * self.CALIB["b2"] \
+                + channel**3 * self.CALIB["b3"] \
+                + channel**4 * self.CALIB["b4"] \
+                + channel**5 * self.CALIB["b5"], 1)
+            
+            diff = abs(wavelength - cw)
             
             if diff < min_diff:
                 min_diff = diff
-                min_diff_channel = i
-
-        # warn if incorrect channel number is about to be returned    
-        #if min_diff_channel < 1 or min_diff_channel > mini_settings.hw_channel_count:
-        #    print(" Incorrect value in wavelength !")             
+                min_diff_channel = channel
+                channels_over = 0
+            elif diff > min_diff:
+                channels_over = channels_over + 1
             
+            if channels_over >= 2:
+                break
+                    
         return min_diff_channel
     
+
 	# method : removeDC
 	# ver : 3.6.2022	
 	# desc : Remove a constant DC level from the spectrum.
@@ -238,10 +254,11 @@ class mini_data:
         plt.show()
 
 	# method : drawLineSpectrum
-	# ver : 2026-05-12
+	# ver : 2026-09-11
 	# desc : Simple line spectrum
 	#        Draw absolute spectrums into figure "ABSOLUTE GRAPH"
-    #        This name identifies the graph instead of ID number.   
+    #        This name identifies the graph instead of ID number. 
+    # todo : test small delay like in drawLineAverage  
     def drawLineSpectrum(self):
         plt.figure("ABSOLUTE GRAPH")
         int_data = [x[1] for x in self.data]
@@ -269,7 +286,9 @@ class mini_data:
         plt.xlabel("wavelength [nm]")
         plt.ylabel("intensity [bit]")
         plt.grid(True)
-        plt.show()
+        plt.draw()
+        plt.pause(0.1)  # time for matplotlib 
+        #plt.show()
 
     # edit : 2025-2-15
     # desc : Returns true if the plot is currently zoomed.
@@ -278,6 +297,59 @@ class mini_data:
         #if(y_default != ax.get_ylim()):
             print(' Zoomed Y')
 
+    # edit : 2026-09-25
+    # desc : Use graph_name "ABSOLUTE GRAPH" or "RELATIVE GRAPH" to separate the two types.
+    def draw_bins(self, spec_to_plot, graph_name="ABSOLUTE GRAPH"):
+
+        self.create_bins(spec_to_plot)
+
+        plt.figure(graph_name)
+        plt.ion()
+
+        wls = [] # bin edges
+        ins = []
+
+        # create x and y coordinate lists
+        for i in range (len(self.bins)):
+            wls.append(self.bins[i][0])
+            wls.append(self.bins[i][1])
+            ins.append(self.bins[i][3])
+            ins.append(self.bins[i][3])
+
+        plt.plot(wls, ins)
+
+        ax = plt.gca() # get axis object
+        ymin, ymax = ax.get_ylim()
+        xmin, xmax = ax.get_xlim()
+
+        x_axis_range = xmax - xmin
+        x_data_range = max(wls) - min(wls)
+
+        # Following handles two special cases:
+        # 1. Second spectrum is being drawn into the same plot but it has higher max value.
+        # 2. If a plot becomes redrawn in its zoomed state, we want to maintain the zoom.
+        try: 
+            if(ymax < int(max(ins) * 1.1) and x_axis_range > int(x_data_range * 1.1)):
+                ax.set_ylim(0, int(max(ins) * 1.1))
+        except ValueError:
+            print(" Error: Scaling of the plot failed!")
+
+        plt.suptitle("" + self.cut_long_filename(self.data_file_name))
+        
+        if graph_name == "ABSOLUTE GRAPH":
+            plt.xlabel("wavelength [nm]")
+            plt.ylabel("intensity [bit]")
+        elif graph_name == "RELATIVE GRAPH":
+            plt.xlabel("wavelength [nm]")
+            plt.ylabel("intensity [bit]")
+        else:
+            print(f' Unknown graph type')
+            plt.xlabel("wavelength [nm]")
+            plt.ylabe("intensity [?]")
+
+        plt.grid(True)    
+        plt.draw()
+        plt.pause(0.1)  # time for matplotlib 
 
     # method : ClearLineSpectrum
     # edit : 2023-12-15
@@ -326,7 +398,7 @@ class mini_data:
             self.added_to_average = True # set to false when new a reading is received
 
 	# method : drawLineAverage
-	# ver : 2023-9-8
+	# ver : 2026-08-05
 	# desc : Draw average spectrum.
 	#        Draw absolute spectrums into figure "ABSOLUTE GRAPH"
     def drawLineAverage(self):
@@ -347,8 +419,9 @@ class mini_data:
         plt.xlabel("wavelength [nm]")
         plt.ylabel("intensity [bit]")
         plt.grid(True)
-        #plt.draw()
-        plt.show()
+        plt.draw()
+        plt.pause(0.1)  # time for matplotlib 
+        #plt.show()
 
     # method : get_ch_intensity
     # ver : 10.5.2022
@@ -429,7 +502,7 @@ class mini_data:
     # edit : 2023-9-22
     # desc : Calculates relative absorption spectrum using zero_reference file (mini_settings).
     #        Automatic DC-removal and filtration.
-    # todo : Combine with method get_rel_abs_from_file.
+    # todo : Combine with method get_rel_abs_from_file. Check if OBSOLETE.
     def get_rel_abs(self):
 
         MIN_LEVEL = 20 # limits calculation to meaningfull areas to avoid abs noise peaks
@@ -569,7 +642,7 @@ class mini_data:
         plt.ylabel("intensity [bit]")
         #plt.draw()
         plt.show()    
-        
+            
     # method : draw_rel_absorption
     # edit : 2026-05-12
     # desc : draw relative values with %-unit into "RELATIVE GRAPH"
@@ -689,9 +762,97 @@ class mini_data:
         except TypeError:
             print(f' ERROR in function cut_long_filename')
             return name
+        
 
+    # edit : 2026-08-03
+    # desc : First create channel bins with the wavelength of each channel edge.
+    #        Then add intensity values to bins.
+    #        Structure : bin[i] = [low_end_wl, high_end_wl, channel_nr, intensity]
+    def create_bins(self, data):
+        
+        self.bins = []
+
+        channel = 1
+        low_end = self.MIN_WL_CONST
+
+        # crete test wave lengths with adjustable spacing
+        spacing = 0.1
+        test_count = int(round((self.MAX_WL_CONST - self.MIN_WL_CONST) / spacing)) # here round fixes tiny floating number errors 
+
+        # Create bin limits
+        for i in range (test_count):
+            test_wl = round(self.MIN_WL_CONST + i * spacing, 1) # here round fixes tiny floating number errors
+            c = self.wavelengthToChannel(test_wl, channel)
+            if c != channel:
+                self.bins.append([low_end, test_wl, channel, -1])
+                channel = c
+                low_end = test_wl
+
+        self.bins.append([low_end, self.MAX_WL_CONST, channel, -1])
+
+        # check that bins were created
+        if not self.bins:
+            print("ERROR: No wavelength bins were created.")
+            return
+        
+        # fix beginning of first channel
+        start_wl = round(2 * self.oneChannelToWavelength(1) - self.bins[0][1], 1)
+        #print(f'start_wl = {start_wl}')
+        self.bins[0][0] = start_wl
+
+        # fix end of the last channel
+        last_channel = self.bins[-1][2]
+        end_wl = round(2 * self.oneChannelToWavelength(last_channel) - self.bins[-1][0], 1)
+        #print(f'end_wl = {end_wl}')
+        self.bins[-1][1] = end_wl
+
+         # Finally, add intensities
+        for i in range (len(data)):
+            for k in range (len(self.bins)):
+                if data[i][0] >= self.bins[k][0] and data[i][0] < self.bins[k][1]:
+                    self.bins[k][3] = data[i][1]
+                    break
+   
+# edit : 2026-09-15
+# desc : Dataclass to handle meta data of a measurement.
+@dataclass
+class Meta_Data:
+    number_of_signals : int | None = None       # average of this many signals
+    integration_time : int | None = None        # setting value in program 
+    led_intensity : int | None = None           # setting value in program
+    background_removed : bool | None = None     # removed? 
+    comment : str | None = None                 # free comment to be saved with data
+
+    # edit : 2026-09-15
+    def clear_meta(self):
+        number_of_signals = None        
+        integration_time = None         
+        led_intensity = None            
+        background_removed = None       
+        comment = None
+
+    # edit : 2026-09-15
+    # desc : Combine all dataclass variables to one comment line.
+    def meta_to_comment(self) -> str:
+
+        full_comment = ''
+        if self.number_of_signals is not None:
+            full_comment += f'Number of signals in measurement: {self.number_of_signals}\n'
+        if self.integration_time is not None:   
+            full_comment += f'Integration time setting: {self.integration_time}\n'
+        if self.led_intensity is not None:
+            full_comment += f'LED intensity setting: {self.led_intensity}\n'
+        if self.background_removed is not None:
+            full_comment += f'Background removed: {self.background_removed}\n'
+
+        full_comment += f'{self.comment}'
+
+        return full_comment              
+
+
+    
 # unit test main
-# ver 2025-4-20
+# ver 2026-08-03
 #
 if __name__ == '__main__':
 
@@ -702,14 +863,17 @@ if __name__ == '__main__':
 
         myData.CALIB = mini_defaults.DEFAULT_SETTINGS['calibration']
 
-        print("channels:")    
-        print(myData.waveLengthToChannel(313)) #  1
-        print(myData.waveLengthToChannel(316)) #  2
-        print(myData.waveLengthToChannel(882)) #  288
+        print("channels:")
+        print(myData.wavelengthToChannel(309)) #  0 outside   
+        print(myData.wavelengthToChannel(313)) #  1
+        print(myData.wavelengthToChannel(316)) #  2
+        print(myData.wavelengthToChannel(879)) #  285
+        print(myData.wavelengthToChannel(882)) #  288
                 
-        myData.data.append([myData.waveLengthToChannel(313), 721])
-        myData.data.append([myData.waveLengthToChannel(316), 711])
-        myData.data.append([myData.waveLengthToChannel(882), 650])
+        myData.data.append([myData.wavelengthToChannel(313), 721])
+        myData.data.append([myData.wavelengthToChannel(316), 711])
+        myData.data.append([myData.wavelengthToChannel(879), 640])
+        myData.data.append([myData.wavelengthToChannel(882), 650])
 
         myData.channelToWavelength()
 
@@ -717,6 +881,11 @@ if __name__ == '__main__':
         print(myData.data[0][0])
         print(myData.data[1][0])
         print(myData.data[2][0])
+        print(myData.data[3][0])
+
+        myData.create_bins(myData.data)
+        print(f'{myData.bins}')
+        #myData.draw_bins()
       
     
             

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Coded Devices Oy
 #
 # file : mini_main.py
-# ver  : 2026-05-14
+# ver  : 2026-09-29
 # desc : Main file of the Mini Spectormeter Python3 application.
 #	 	 Communication with the hardware via FTDI VCP drivers.
 # TODO : - Correct intensity calibration so that highest point of the spectrum
@@ -25,12 +25,14 @@ import mini_defaults
 
 # VERSION
 # UPDATE THE VERSION NUMBER/DATE ONLY HERE
-app_version = "2026-05-14"
+app_version = "2026-09-29"
 
 class MainApp:
     
     # edit 2026-04-10
     def __init__(self):
+
+        self.STEP_DRAW = True                   # True --> step draw using bins, False --> line draw 
         
         self.myData = mini_data()               # spectrum data
         self.myMultiTimedData = mini_timed_multi_data() # timed data points for default number of channels
@@ -170,7 +172,7 @@ class MainApp:
             self.root.after(0, lambda cmd=command, kw=kwargs: self.GUI_callback(cmd, **kw))
 
     # Callback message from GUI
-    # edit : 2026-03-27
+    # edit : 2026-09-11
     # desc : Read command from inputCommand and possible keyword argument in kwargs
     def GUI_callback(self, inputCommand, **kwargs):
             
@@ -180,6 +182,8 @@ class MainApp:
             print("ld : load Time Domain data")
             print("s : save spectrum") 
             print(f"b : remove background ({self.settings.get('files','background_file_name')})")
+
+            print(f"ave : create average by measuring multiple spectra")
             print("a : add to average")
             print("sa : save average")
             print("ca : clear average")
@@ -216,6 +220,7 @@ class MainApp:
             # for gui only 'gui_start_timer'
             # for gui only 'gui_stop_timer'
             # for gui only 'gui_read_file_header'
+            # for gui only 'gui_ave'
             # 'gui_input_state'
             print("q : quit")
         
@@ -243,12 +248,19 @@ class MainApp:
                 print(" Error : No integration time!")
 
         # READ FULL SPECTRUM (ALL CHANNELS)
-        # edit : 2023-12-15
+        # edit : 2026-09-25
+        # desc : 
         elif inputCommand == 'r':
             if(self.myInstrument.getSpectrum(self.myData.data) == 1):
                 self.myData.channelToWavelength()
                 self.myData.data_file_name = ""         # data in memory
-                self.myData.drawLineSpectrum()
+
+                # select draw style
+                if self.STEP_DRAW:
+                    self.myData.draw_bins(self.myData.data)                 
+                else:
+                    self.myData.drawLineSpectrum()        
+                
                 self.myData.added_to_average = False    # new data
         
         # SAVE DATA FROM MEMORY TO FILE
@@ -327,12 +339,22 @@ class MainApp:
                     if unit == '%':
                         self.myData.rel_abs_file_name = file_name
                         self.myData.rel_absorption = tempData
-                        self.myData.draw_rel_absorption(self.myData.rel_absorption)
+
+                        # select draw style
+                        if self.STEP_DRAW:
+                            self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
+                        else:
+                            self.myData.draw_rel_absorption(self.myData.rel_absorption)
                     # bits 
                     else:
                         self.myData.data_file_name = file_name
                         self.myData.data = tempData
-                        self.myData.drawLineSpectrum()
+                        
+                        # select draw style
+                        if self.STEP_DRAW:
+                            self.myData.draw_bins(self.myData.data)                 
+                        else:
+                            self.myData.drawLineSpectrum()        
 
                     self.myData.added_to_average = False # can be added to average
 
@@ -367,11 +389,90 @@ class MainApp:
                 return -1
             
         # REMOVE BACKGROUND
-        # ver : 2026-03-28
+        # ver : 2026-09-25
         elif inputCommand == 'b':
             self.myData.removeBackground(self.settings.get('files', 'background_file_name'))
-            self.myData.drawLineSpectrum()
+            # select draw style
+            if self.STEP_DRAW:
+                self.myData.draw_bins(self.myData.data)                 
+            else:
+                self.myData.drawLineSpectrum()        
 
+        # CREATE AVERAGE BY MAKING MULTIPLE MEASUREMENTS IN SERIES
+        # edit : 2026-09-25
+        # desc : This is meant for command line use. 
+        #        The average data is kept in myData.average[] -list separate from myData.data[] -list.
+        #        Therefore saving the data requires command for aving average ('sa').
+        # todo : clear graph and update it with the latest average.
+        elif inputCommand == 'ave':
+            try:
+                meas_number = int(kwargs['number'])
+            except ValueError:
+                print(f' Error : Input parameter number must be integer!')
+                return
+            
+            self.myData.average = []
+            self.myData.ave_size = 0
+            
+            print(f" Averaging {meas_number} measurements...")
+            
+            # each spectrum
+            for i in range(meas_number):
+                
+                print(f' Measuring {i+1} / {meas_number}')
+                if(self.myInstrument.getSpectrum(self.myData.data) == 1):
+                    self.myData.channelToWavelength()
+                    self.myData.added_to_average = False
+                    self.myData.ClearLineSpectrum()
+                    self.myData.addSpectrumToAverage()
+
+                    # select draw style
+                    if self.STEP_DRAW:
+                        self.myData.draw_bins(self.myData.average)
+                    else:
+                        self.myData.drawLineAverage()
+                else:
+                    print(f' ERROR in measuring average spectrum! ')
+                    break
+                    
+        # edit : 2026-09-22
+        # desc : This is GUI version of command 'ave'. In the end of measurement the distinction between 
+        #        single measurement data and average data is removed. Now 'SAVE', 'CLEAR' and 'REDRAW' buttons
+        #        work with this data too.        
+        elif inputCommand == 'gui_ave':          
+            try:
+                meas_number = int(kwargs['number'])
+            except ValueError:
+                print(f' Error : Input parameter number must be integer!')
+                return
+            
+            self.myData.average = []
+            self.myData.ave_size = 0
+            
+            print(f" Averaging {meas_number} measurements...")
+            
+            # each spectrum
+            for i in range(meas_number):
+                
+                print(f'\n measuring {i+1} / {meas_number}')
+                if(self.myInstrument.getSpectrum(self.myData.data) == 1):
+                    self.myData.channelToWavelength()
+                    self.myData.added_to_average = False
+                    self.myData.ClearLineSpectrum()
+                    self.myData.addSpectrumToAverage()
+
+                    # select draw style
+                    if self.STEP_DRAW:
+                        self.myData.draw_bins(self.myData.average)
+                    else:
+                        self.myData.drawLineAverage()
+                else:
+                    print(f' ERROR in measuring average spectrum! ')
+                    break
+
+            # copy average to data --> final average becomes a normal measurement
+            self.myData.data =  self.myData.average.copy()          
+        
         # ADD A SPECTRUM TO AVERAGE
         # ver 2023-12-15
         elif inputCommand == 'a':
@@ -382,6 +483,7 @@ class MainApp:
                 self.myData.drawLineAverage()
             else:
                 print(" Can't be added multiple times")
+
 
         # SAVE AVERAGE
         # edit : 2023-9-29
@@ -448,7 +550,7 @@ class MainApp:
         # TODO : Condsider combining 'one' with 'p'
         elif inputCommand == 'p':
             wave_length = input('Give a wave length:')
-            ch_number = self.myData.waveLengthToChannel(int(wave_length))
+            ch_number = self.myData.wavelengthToChannel(int(wave_length))
             
             if(ch_number < 1):
                 print(' ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
@@ -460,7 +562,7 @@ class MainApp:
                 print(' Starting continuous mode. Press Ctrl+C to end. ')
                 try:
                     while True:
-                        (ch_nr, ch_val) = self.myInstrument.getOneChannel(self.myData.waveLengthToChannel(int(wave_length)))
+                        (ch_nr, ch_val) = self.myInstrument.getOneChannel(self.myData.wavelengthToChannel(int(wave_length)))
                         time.sleep(0.8)
                 except KeyboardInterrupt:
                     print("Stopped!")
@@ -498,8 +600,8 @@ class MainApp:
             self.myData.drawLineAbsorption()
         
         # CALC RELATIVE ABSORPTION
-        # edit : 2025-4-25
-        # Compare to zero_reference data
+        # edit : 2026-09-25
+        # desc : Calculate the relative (%) absorption spectrum by comparing to the zero_reference data.
         elif inputCommand == 'cab':
             print(" Calculating relative absorption... ")
             if 'filename' in kwargs:
@@ -507,7 +609,11 @@ class MainApp:
                 print(" Zero reference file: " + file_name)
                 retval = self.myData.get_rel_abs_from_file(file_name)
                 if retval == 1:
-                    self.myData.draw_rel_absorption(self.myData.rel_absorption)
+                    # select draw style
+                    if self.STEP_DRAW:
+                        self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
+                    else:
+                        self.myData.draw_rel_absorption(self.myData.rel_absorption)
             else:
                 print(" No zero reference file defined! ")
                 # print(" Default zero reference file (see mini_settings.py)")
@@ -516,6 +622,7 @@ class MainApp:
 
         # SAVE RELATIVE ABSORPTION
         # edit: 2026-05-13
+        # TODO : Is redrawing after saving necessary?
         elif inputCommand == 'sab':
             ret_val = 0
             
@@ -536,10 +643,14 @@ class MainApp:
                 print(" absorption saved in " + file_name)
                 self.myData.rel_abs_file_name = file_name
                 if self.myData.is_rel_abs_graph_open():
-                    self.myData.draw_rel_absorption(self.myData.rel_absorption)
+                    # select draw style
+                    if self.STEP_DRAW:
+                        self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
+                    else:
+                        self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # SAVE RELATIVE ABSORPTION - GUI VERSION
-        # edit 2026-05-13
+        # edit 2026-09-25
         # desc : give file name in input parameters ('gui_sab', filename='xxxx')
         elif inputCommand == 'gui_sab':
             file_name = kwargs['filename']
@@ -555,22 +666,27 @@ class MainApp:
                 print(" absorption saved in " + file_name)
                 self.myData.rel_abs_file_name = file_name
                 if self.myData.is_rel_abs_graph_open():
-                    self.myData.draw_rel_absorption(self.myData.rel_absorption)
+                    # select draw style
+                    if self.STEP_DRAW:
+                        self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
+                    else:
+                        self.myData.draw_rel_absorption(self.myData.rel_absorption)
+
 
         # NOT USED WITH GUI, NOT UP-TO-DATE
         # READ ONE CHANNEL
-        # edit 2023-12-15
+        # edit 2026-08-28
         # TODO : Condsider combining 'one' with 'p'
         elif inputCommand == 'one':
             
             wave_length = input(" Give a wave length (313...882)")
-            ch_number = self.myData.waveLengthToChannel(int(wave_length))
+            ch_number = self.myData.wavelengthToChannel(int(wave_length))
             if(ch_number < 1):
                 print(' ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
             elif (ch_number > self.hw_channel_count):
                 print(' ' + wave_length + ' nm is too LONG a wave length for the hardware.')
             else:
-                (ch_nr, ch_val) = self.myInstrument.getOneChannel(self.myData.waveLengthToChannel(int(wave_length)))
+                (ch_nr, ch_val) = self.myInstrument.getOneChannel(self.myData.wavelengthToChannel(int(wave_length)))
 
         # edit 2025-4-20
         # desc : Ask uc to measure a new spectrum and the to send the value of the channel matching the selected wavelength.
@@ -581,7 +697,7 @@ class MainApp:
             ch_val = -1
 
             wave_length = int(kwargs['wavelength'])
-            ch_number = self.myData.waveLengthToChannel(wave_length)
+            ch_number = self.myData.wavelengthToChannel(wave_length)
              
             if(ch_number < 1):
                 print(' ERROR: ' + wave_length + ' nm is too SHORT a wave length for the hardware.')
@@ -610,7 +726,7 @@ class MainApp:
 
             wave_length = int(kwargs['wavelength'])
             ch_index = int(kwargs['index'])
-            ch_number = self.myData.waveLengthToChannel(wave_length)
+            ch_number = self.myData.wavelengthToChannel(wave_length)
             
             if(ch_index < 0 or ch_index > self.myMultiTimedData.ch_count):
                 print(' ERROR: Channel index outside of expected range 0...%i!' %self.myMultiTimedData.ch_count)
@@ -732,11 +848,17 @@ class MainApp:
             self.myData.drawLineSpectrum()
 
         # DRAW SPECTRUM IN MEMORY
-        # ver 29.5.2022
+        # edit : 2026-09-25
         elif inputCommand == 'ds':
             print(" Draw spectrum in memory")
             if(len(self.myData.data) > 1):
-                self.myData.drawLineSpectrum()
+                
+                # select draw
+                if self.STEP_DRAW:
+                    self.myData.draw_bins(self.myData.data)
+                else:
+                    self.myData.drawLineSpectrum()
+                
             else:
                 print(" No spectrum in memory!")
 
@@ -815,7 +937,7 @@ class MainApp:
         ch_nr = -1
         ch_val = -1
         wave_length = 555
-        ch_number = self.myData.waveLengthToChannel(wave_length)
+        ch_number = self.myData.wavelengthToChannel(wave_length)
         try:
             (ch_nr, ch_val) = self.myInstrument.GetFirstChannel(ch_number)
             self.myMultiTimedData.AddDataPoint(0, ch_val, time.time() - self.myMultiTimedData.startTime)
