@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Coded Devices Oy
 #
 # file : mini_main.py
-# ver  : 2026-09-29
+# ver  : 2026-11-05
 # desc : Main file of the Mini Spectormeter Python3 application.
 #	 	 Communication with the hardware via FTDI VCP drivers.
 # TODO : - Correct intensity calibration so that highest point of the spectrum
@@ -25,15 +25,33 @@ import mini_defaults
 
 # VERSION
 # UPDATE THE VERSION NUMBER/DATE ONLY HERE
-app_version = "2026-09-29"
+app_version = "2026-11-05"
 
 class MainApp:
     
-    # edit 2026-04-10
+    # edit 2026-11-05
     def __init__(self):
 
         self.STEP_DRAW = True                   # True --> step draw using bins, False --> line draw 
         
+        # Start Info - part one
+        print("")
+        print(" *** Mini Spec *** ")
+        print(" Copyright (c) 2026 Coded Devices Oy")
+        print(" PC Software version " + app_version)
+        
+        # Read, test and save settings in .ini file to make sure all sections are found
+        # and all keys have values.
+        # edit : 2026-03-28
+        self.settings = configparser.ConfigParser(comment_prefixes = "#") # ini file content
+        try:
+            fop.load_settings(self.settings, fop.settigs_file_name)
+        except FileNotFoundError as e:
+            print(f"{e}")
+            print(f" Creating a new {fop.settigs_file_name} with defaults!")
+        fop.test_settings(self.settings)
+        fop.save_settings(self.settings, fop.settigs_file_name)
+
         self.myData = mini_data()               # spectrum data
         self.myMultiTimedData = mini_timed_multi_data() # timed data points for default number of channels
         self.myInstrument = mini_instrument()
@@ -42,34 +60,20 @@ class MainApp:
         self.continuousInterval = 1             # interval of continuous readings in sec
         self.hw_channel_count = None            # number of channels of the connected instrument (initialized with bad value)
 
-        # Print Start info
-        print("")
-        print(" *** Mini Spec *** ")
-        print(" Copyright (c) 2026 Coded Devices Oy")
-        print(" PC Software version " + app_version)
-        print(" Connecting to hardware...")
-        print("")
-
-        # Read, test and save settings in .ini file to make sure all sections are found
-        # and all keys have values.
-        # edit : 2026-03-28
-        self.settings = configparser.ConfigParser(comment_prefixes = "#") # ini file content
-        try:
-            self.settings = fop.load_settings(self.settings, fop.settigs_file_name)
-        except FileNotFoundError as e:
-            print(f"{e}")
-            print(f" Creating a new {fop.settigs_file_name} with defaults!")
-        fop.test_settings(self.settings)
-        fop.save_settings(self.settings, fop.settigs_file_name)
-
+        # Start Info - part two
         # Get calibration coefficients from settings file
         # Edit : 2025-4-20
+        print()
         for key in self.settings['calibration']:
             self.myData.CALIB[key] = float(self.settings["calibration"][key])
         self.myData.CheckCalib()
 
+        # Start Info - part three
+        print()
+        print(" Connecting to hardware...")
+       
         # Connect to the instrument
-        # edit : 2026-04-10
+        # edit : 2026-11-05
         # desc : Connect to the instrument. Then 
         #        1) read back firmware version,
         #        2) Send LED intensity to the instrument,
@@ -83,7 +87,7 @@ class MainApp:
             
             # INIT FIRMWARE VERSION
             fw_version = self.myInstrument.getFirmwareVersion()
-            print(" Firmware version : " + fw_version)
+            print(f' Firmware version : {fw_version}')
 
             # INIT LED INTENSITY
             LEDi = int(self.settings.get('measurement', 'hw_source_intensity'))
@@ -120,7 +124,7 @@ class MainApp:
         self.gui = mini_gui.GUI(self.root, self.GUI_callback)
         self.gui.update_version(app_version, fw_version)
         self.root.protocol('WM_DELETE_WINDOW', self.exit_app)
-        print(f" Ready!")
+        print(f"\n Init Ready!")
         print('')
 
         # Start terminal command thread
@@ -181,7 +185,7 @@ class MainApp:
             print("l : load saved spectrum")
             print("ld : load Time Domain data")
             print("s : save spectrum") 
-            print(f"b : remove background ({self.settings.get('files','background_file_name')})")
+            print(f"b : remove background ({fop.read_settings_file('files','background_file_name')})")
 
             print(f"ave : create average by measuring multiple spectra")
             print("a : add to average")
@@ -193,7 +197,7 @@ class MainApp:
             print("f : filter")
             print("p : point to source (continuous)")
             print(f"n : intensity correction ({self.settings.get('files', 'intensity_calib_file')})")
-            print(f"o : get absorption using reference ({self.settings.get('files', 'zero_reference_file')})")
+            print(f"o : get absorption using reference ({fop.read_settings_file('files', 'zero_reference_file')})")
             print("g : gain")
             print("cab : calculate relative absorption")
             print("sab : save relative absorption")
@@ -248,16 +252,17 @@ class MainApp:
                 print(" Error : No integration time!")
 
         # READ FULL SPECTRUM (ALL CHANNELS)
-        # edit : 2026-09-25
+        # edit : 2026-11-05
         # desc : 
         elif inputCommand == 'r':
             if(self.myInstrument.getSpectrum(self.myData.data) == 1):
                 self.myData.channelToWavelength()
                 self.myData.data_file_name = ""         # data in memory
+                #self.myData.loaded_spectrum = False     # spectrum is measured, not loaded
 
                 # select draw style
                 if self.STEP_DRAW:
-                    self.myData.draw_bins(self.myData.data)                 
+                    self.myData.draw_bins(self.myData.data)         
                 else:
                     self.myData.drawLineSpectrum()        
                 
@@ -312,9 +317,10 @@ class MainApp:
                     
 
         # LOAD FROM FILE
-        # ver 2026-05-12
+        # ver 2026-11-05
         # desc : Use unit info to choose proper draw method. 
         #        Note! Does not work in VSCode environment.
+        #        STEP DRAW is not used with loaded data since it may have different calibration.
         elif inputCommand == 'l':
            
             file_name = kwargs.get('filename')     
@@ -328,31 +334,35 @@ class MainApp:
             #folder = self.settings.get('files', 'my_spectra_folder')
             #file_name = folder + file_name
             
-            #print(f' Loading from file {file_name}')
             tempData, unit = fop.read_file(file_name)
- 
+             
             # NOTE : fop.read_file() returns -1 if file is not found
                         
-            if tempData != -1: # error in reading file       
+            if tempData != -1: # error in reading file    
+                
                 try:   
                     # % 
                     if unit == '%':
+                        #self.myData.loaded_rel_abs = True
                         self.myData.rel_abs_file_name = file_name
                         self.myData.rel_absorption = tempData
 
                         # select draw style
                         if self.STEP_DRAW:
-                            self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
+                            #self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
+                            self.myData.draw_rel_absorption(self.myData.rel_absorption)
                         else:
                             self.myData.draw_rel_absorption(self.myData.rel_absorption)
                     # bits 
                     else:
+                        #self.myData.loaded_spectrum = True
                         self.myData.data_file_name = file_name
                         self.myData.data = tempData
                         
-                        # select draw style
-                        if self.STEP_DRAW:
-                            self.myData.draw_bins(self.myData.data)                 
+                        # select draw style, use step only if cal matches
+                        if self.STEP_DRAW and self.myData.calibration_matches(self.myData.data):
+                            self.myData.draw_bins(self.myData.data)   
+                            #self.myData.drawLineSpectrum()             
                         else:
                             self.myData.drawLineSpectrum()        
 
@@ -389,17 +399,18 @@ class MainApp:
                 return -1
             
         # REMOVE BACKGROUND
-        # ver : 2026-09-25
+        # ver : 2026-11-05
         elif inputCommand == 'b':
-            self.myData.removeBackground(self.settings.get('files', 'background_file_name'))
+            self.myData.removeBackground(fop.read_settings_file("files", "background_file_name"))
+            
             # select draw style
-            if self.STEP_DRAW:
+            if self.STEP_DRAW and self.myData.calibration_matches(self.myData.data):
                 self.myData.draw_bins(self.myData.data)                 
             else:
                 self.myData.drawLineSpectrum()        
 
         # CREATE AVERAGE BY MAKING MULTIPLE MEASUREMENTS IN SERIES
-        # edit : 2026-09-25
+        # edit : 2026-11-05
         # desc : This is meant for command line use. 
         #        The average data is kept in myData.average[] -list separate from myData.data[] -list.
         #        Therefore saving the data requires command for aving average ('sa').
@@ -421,6 +432,7 @@ class MainApp:
                 
                 print(f' Measuring {i+1} / {meas_number}')
                 if(self.myInstrument.getSpectrum(self.myData.data) == 1):
+                    #self.myData.loaded_spectrum = False
                     self.myData.channelToWavelength()
                     self.myData.added_to_average = False
                     self.myData.ClearLineSpectrum()
@@ -435,7 +447,7 @@ class MainApp:
                     print(f' ERROR in measuring average spectrum! ')
                     break
                     
-        # edit : 2026-09-22
+        # edit : 2026-11-05
         # desc : This is GUI version of command 'ave'. In the end of measurement the distinction between 
         #        single measurement data and average data is removed. Now 'SAVE', 'CLEAR' and 'REDRAW' buttons
         #        work with this data too.        
@@ -456,6 +468,7 @@ class MainApp:
                 
                 print(f'\n measuring {i+1} / {meas_number}')
                 if(self.myInstrument.getSpectrum(self.myData.data) == 1):
+                    #self.myData.loaded_spectrum = False
                     self.myData.channelToWavelength()
                     self.myData.added_to_average = False
                     self.myData.ClearLineSpectrum()
@@ -600,7 +613,7 @@ class MainApp:
             self.myData.drawLineAbsorption()
         
         # CALC RELATIVE ABSORPTION
-        # edit : 2026-09-25
+        # edit : 2026-11-05
         # desc : Calculate the relative (%) absorption spectrum by comparing to the zero_reference data.
         elif inputCommand == 'cab':
             print(" Calculating relative absorption... ")
@@ -609,8 +622,9 @@ class MainApp:
                 print(" Zero reference file: " + file_name)
                 retval = self.myData.get_rel_abs_from_file(file_name)
                 if retval == 1:
+                    #self.myData.loaded_rel_abs = self.myData.loaded_spectrum # is loaded or measured data used
                     # select draw style
-                    if self.STEP_DRAW:
+                    if self.STEP_DRAW and self.myData.calibration_matches(self.myData.rel_absorption):
                         self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
                     else:
                         self.myData.draw_rel_absorption(self.myData.rel_absorption)
@@ -621,7 +635,7 @@ class MainApp:
                 #     self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # SAVE RELATIVE ABSORPTION
-        # edit: 2026-05-13
+        # edit: 2026-11-05
         # TODO : Is redrawing after saving necessary?
         elif inputCommand == 'sab':
             ret_val = 0
@@ -644,13 +658,13 @@ class MainApp:
                 self.myData.rel_abs_file_name = file_name
                 if self.myData.is_rel_abs_graph_open():
                     # select draw style
-                    if self.STEP_DRAW:
+                    if self.STEP_DRAW and self.myData.calibration_matches(self.myData.rel_absorption):
                         self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
                     else:
                         self.myData.draw_rel_absorption(self.myData.rel_absorption)
 
         # SAVE RELATIVE ABSORPTION - GUI VERSION
-        # edit 2026-09-25
+        # edit 2026-11-05
         # desc : give file name in input parameters ('gui_sab', filename='xxxx')
         elif inputCommand == 'gui_sab':
             file_name = kwargs['filename']
@@ -667,7 +681,7 @@ class MainApp:
                 self.myData.rel_abs_file_name = file_name
                 if self.myData.is_rel_abs_graph_open():
                     # select draw style
-                    if self.STEP_DRAW:
+                    if self.STEP_DRAW and self.myData.calibration_matches(self.myData.rel_absorption):
                         self.myData.draw_bins(self.myData.rel_absorption, "RELATIVE GRAPH")
                     else:
                         self.myData.draw_rel_absorption(self.myData.rel_absorption)
@@ -854,7 +868,7 @@ class MainApp:
             if(len(self.myData.data) > 1):
                 
                 # select draw
-                if self.STEP_DRAW:
+                if self.STEP_DRAW and self.myData.calibration_matches(self.myData.data):
                     self.myData.draw_bins(self.myData.data)
                 else:
                     self.myData.drawLineSpectrum()

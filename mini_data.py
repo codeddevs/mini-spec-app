@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Coded Devices Oy
 
 # file name : mini_data
-# ver : 2026-09-11
+# ver : 2026-11-06
 # desc : mini_data class for data handling and presentation operations.
 #		 
 # TODO : * Complete drawPointValue method 
@@ -16,12 +16,12 @@ from dataclasses import dataclass
 
 class mini_data:
         
-    # edit 2026-07-27
+    # edit 2026-11-06
     # TODO : Move minimum and maximum wavelengths into default settings
     def __init__ (self):
         
-        self.MIN_WL_CONST = 310     # Minimum wl of the detected spectrum
-        self.MAX_WL_CONST = 890     # Maximum wl of the detected spectrum
+        self.min_wl = 300           # Minimum wl of the detected spectrum
+        self.max_wl = 900           # Maximum wl of the detected spectrum
         self.channel_count = int(fop.read_settings_file("device", "hw_channel_count"))
         self.data = []              # Warning! data array can contain modified data, ch numbers or wavelengths.
         self.bins = []              # Data in wavelength bins matching channel widths.
@@ -35,6 +35,9 @@ class mini_data:
         self.data_file_name = ""    # measured spectrum file to include in plots
         self.rel_abs_file_name = "" # calculated absorption file to include in plots
         self.added_to_average = False   # has spectrum currently in memory been already added to average spectrum
+        #self.loaded_spectrum = False   # Is spectrum loaded (True) or measured (False)
+        #self.loaded_rel_abs = False    # True if relative absorption uses loaded wavelength data.
+
         self.CALIB = {              # wavelength calibration coefficients
             "a0" : None,
             "b1" : None,
@@ -46,19 +49,93 @@ class mini_data:
 
        
     # method : CheckCalibCoeffs
-    # edit : 2025-4-19
+    # edit : 2026-11-05
     def CheckCalib(self):
         OK = 1
         print(" Reading calibration... ", end="")
         for key, value in self.CALIB.items():
-            if value == None or value == 0.0:
+            if value is None:
                 print(f" ERROR in {key} calibration coefficient!")
                 OK = 0
             #else:
                 #print(f" Coeff {key} is {value}")
         if OK:
             print("ready!")
+            self.CalcSpectrumRange()
 
+    # edit : 2026-11-06
+    # desc : Calculate the Min and Max of the detected spectrum. Use calib coeffs.
+    def CalcSpectrumRange(self):
+
+        if self.channel_count < 2:
+            print(f' ERROR: too few channels --> Spectrum range can not be calculated')
+            return
+
+        for key, value in self.CALIB.items():
+            if value is None:
+                print(f' ERROR: calib coeffs missing or bad --> Spectrum range can not be calculated!')
+                return
+                      
+        try:
+            # beginnig of the first channel is MIN
+            ch_one_wl = self.oneChannelToWavelength(1)
+            ch_two_wl = self.oneChannelToWavelength(2)
+            half_width = (ch_two_wl - ch_one_wl) / 2
+            self.min_wl = round(ch_one_wl - half_width, 1)
+
+            # end of the last channel is MAX
+            ch_last_wl = self.oneChannelToWavelength(self.channel_count)
+            ch_prev_wl = self.oneChannelToWavelength(self.channel_count -1)
+            half_width = (ch_last_wl - ch_prev_wl) / 2
+            self.max_wl = round(ch_last_wl + half_width, 1)
+
+            # print mid points of the first and last channel since these are in data files -->
+            # easy to check compatibility 
+            print(f' Spectrum range: {ch_one_wl} - {ch_last_wl} nm')
+
+            return
+
+        except (ValueError, TypeError):
+            print(f' ERROR in calculating wavelength limits!')
+            return
+    
+    # edit : 2026-11-05
+    # desc : Check if calibration data in use matches the wavelength data of spectrum.
+    #        Make check in three points: first, middle and last.
+    def calibration_matches(self, spectrum) -> bool:
+
+        if len(spectrum) != self.channel_count:
+            return False
+
+        for i in [0, len(spectrum)//2, len(spectrum)-1]:
+            wavelength = self.oneChannelToWavelength(i + 1)
+
+            if abs(spectrum[i][0] - wavelength) > 0.2:  # allow +/- 0.2 nm difference
+                return False
+
+        return True
+    
+    # edit : 2026-11-06
+    # desc : Check if two spectrum have similar wavelength data.
+    def wavelengths_match(self, spectrum_1, spectrum_2) -> bool:
+
+        # check data exists
+        if len(spectrum_1) == 0:
+            print(f' ERROR: spectrum length is zero')
+            return False
+
+        # check lengths
+        if len(spectrum_1) != len(spectrum_2):
+            print(f' ERROR: reference and sample spectrum are not same length!')
+            return False
+        
+        # check first, middle and last channel
+        for i in [0, len(spectrum_1)//2, len(spectrum_1)-1]:
+            if abs(spectrum_1[i][0] - spectrum_2[i][0]) > 0.2:
+                return False
+        
+        return True
+            
     # method : channelToWavelength
 	# edit : 2026-08-03
 	# desc : Convert channel (pix) number 1...288 to wavelength using factory calibration data.
@@ -107,9 +184,9 @@ class mini_data:
         channels_over = 0   # channels searched after the found minimum, used as a safety margin
 
         # check if wavelength is outside of expected range
-        if wavelength < self.MIN_WL_CONST:
+        if wavelength < self.min_wl:
             return 0
-        if wavelength > self.MAX_WL_CONST:
+        if wavelength > self.max_wl:
             return self.channel_count + 1
                  
         for channel in range(start_channel, self.channel_count + 1):
@@ -258,7 +335,7 @@ class mini_data:
 	# desc : Simple line spectrum
 	#        Draw absolute spectrums into figure "ABSOLUTE GRAPH"
     #        This name identifies the graph instead of ID number. 
-    # todo : test small delay like in drawLineAverage  
+    #        Use Line Draw always with a loaded spectrum. Bins use calibration.  
     def drawLineSpectrum(self):
         plt.figure("ABSOLUTE GRAPH")
         int_data = [x[1] for x in self.data]
@@ -557,9 +634,10 @@ class mini_data:
         return 1
 
     # method : get_rel_abs_from_file
-    # edit : 2026-05-13
+    # edit : 2026-11-06
     # desc : Calculates relative absorption spectrum using given reference file.
-    #        Automatic DC-removal and filtration. Return 0 if no data, return 1 if successful
+    #        Automatic DC-removal and filtration. Return 0 if no data, or data is incompatible,
+    #        return 1 if successful.
     # todo : Verify that this method does not alter the original spectrum data.
     #        Combine with get_rel_abs method.
     def get_rel_abs_from_file(self, zero_ref_file):
@@ -571,8 +649,18 @@ class mini_data:
         MIN_LEVEL = 100 # limits calculation to meaningfull areas to avoid abs noise peaks
         print(f' Absorption Signal Threshold: {MIN_LEVEL} bits')
         
-        # copies of reference & data to work with 
-        self.loadZeroReference(zero_ref_file)       # load reference data to self.zero_reference
+        # read zero reference file into self.zero_reference list
+        self.loadZeroReference(zero_ref_file)
+        if self.zero_reference == -1:
+            print(f' ERROR in reading zero reference file')
+            return 0 # error in reading the reference file       
+                
+        # check that reference and sample data are compatible
+        if not self.wavelengths_match(self.zero_reference, self.data):
+            print(f' ERROR: Reference and sample spectrum are not compatible!')
+            return 0 # error
+
+        # create new data list to operate with
         data_local_copy = copy.deepcopy(self.data)
 
         self.remove_any_dc(self.zero_reference, self.estimate_any_dc(self.zero_reference))
@@ -764,31 +852,34 @@ class mini_data:
             return name
         
 
-    # edit : 2026-08-03
+    # edit : 2026-10-15
     # desc : First create channel bins with the wavelength of each channel edge.
     #        Then add intensity values to bins.
-    #        Structure : bin[i] = [low_end_wl, high_end_wl, channel_nr, intensity]
+    #        Bib Structure : bin[i] = [low_end_wl, high_end_wl, channel_nr, intensity]
+    #        Two possibilities to populate bin intensities: using wavelength or channel no. 
+    #        Using wavelengths to populate bins may cause drawing issues (steps down to -1) if data and calibation do not match.
+    #        Using channel no. to populate bins may lead to inaccuracies if data and calibration do not match.
     def create_bins(self, data):
         
         self.bins = []
 
         channel = 1
-        low_end = self.MIN_WL_CONST
+        low_end = self.min_wl
 
         # crete test wave lengths with adjustable spacing
         spacing = 0.1
-        test_count = int(round((self.MAX_WL_CONST - self.MIN_WL_CONST) / spacing)) # here round fixes tiny floating number errors 
+        test_count = int(round((self.max_wl - self.min_wl) / spacing)) # here round fixes tiny floating number errors 
 
         # Create bin limits
         for i in range (test_count):
-            test_wl = round(self.MIN_WL_CONST + i * spacing, 1) # here round fixes tiny floating number errors
+            test_wl = round(self.min_wl + i * spacing, 1) # here round fixes tiny floating number errors
             c = self.wavelengthToChannel(test_wl, channel)
             if c != channel:
                 self.bins.append([low_end, test_wl, channel, -1])
                 channel = c
                 low_end = test_wl
 
-        self.bins.append([low_end, self.MAX_WL_CONST, channel, -1])
+        self.bins.append([low_end, self.max_wl, channel, -1])
 
         # check that bins were created
         if not self.bins:
@@ -805,13 +896,20 @@ class mini_data:
         end_wl = round(2 * self.oneChannelToWavelength(last_channel) - self.bins[-1][0], 1)
         #print(f'end_wl = {end_wl}')
         self.bins[-1][1] = end_wl
+                
+        # Finally, add intensities to matching bins by channel number, 2026-10-15
+        if len(self.bins) != len(data):
+            print(" ERROR: Number of bins does not match number of data points!")
+            return
 
-         # Finally, add intensities
-        for i in range (len(data)):
-            for k in range (len(self.bins)):
-                if data[i][0] >= self.bins[k][0] and data[i][0] < self.bins[k][1]:
-                    self.bins[k][3] = data[i][1]
-                    break
+        for i in range(len(data)):
+            self.bins[i][3] = data[i][1]
+
+        # # check that number of bins is correct
+        # print(f"Number of bins: {len(self.bins)}")
+        # print(f"Number of data points: {len(data)}")
+        # print(f"First bin: {self.bins[0]}")
+        # print(f"Last bin: {self.bins[-1]}")
    
 # edit : 2026-09-15
 # desc : Dataclass to handle meta data of a measurement.

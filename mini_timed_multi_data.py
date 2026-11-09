@@ -100,10 +100,12 @@ class mini_timed_multi_data:
         self.ts_count = 0
         self.startTime = 0
 
-    # edit : 2026-04-12
+    # edit : 2026-10-31
     # desc : Input parameter b defines if the graph blocks the progress of the program.
     # todo : Check if there is any benefit of using interactive mode plt.ion() 
     def DrawTimedGraph(self, b=False):
+
+        LIMIT = 300 # highest number of points to be drawn (prevent slowing down)
 
         if self.ts_count == 1:
             self.PrintWavelengths()
@@ -111,17 +113,19 @@ class mini_timed_multi_data:
         plot_styles = ['-*b', '-og', '-xr', '-+y', '-#m']
 
         plt.figure("TIME DOMAIN VALUES")
-        plt.ion() # added 2025-2-16
+        plt.clf()   # added 2026-10-23
+        plt.ion()   # added 2025-2-16
         plt.grid(True)
         plt.xlabel("Time [s]")
         plt.ylabel("Intensity [bit]")
 
         legends = []
         
-        time_data = [x[self.ch_count] for x in self.timed_data] #ch_count is same as the index of time_stamp value
+        plot_data = self.timed_data[-LIMIT:] # select 200 latest data points
+
+        time_data = [x[self.ch_count] for x in plot_data] #ch_count is same as the index of time_stamp value
         for i in range(self.ch_count):
-            ch_data = [x[i] for x in self.timed_data]
-            time_data = [x[self.ch_count] for x in self.timed_data]
+            ch_data = [x[i] for x in plot_data]
             plt.plot(time_data, ch_data, plot_styles[i])
 
             # is real wavelength info available for legend

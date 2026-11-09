@@ -38,7 +38,7 @@ def test_settings(config):
 def load_settings(config, file_name):
     read_file = config.read(file_name)
     if not read_file:
-        raise FileNotFoundError(f" File {file_name} may not exist or is invalid.")
+        raise FileNotFoundError(f"\n File {file_name} may not exist or is invalid.")
     return config
 
 # Edit : 2025-3-21

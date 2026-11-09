@@ -310,6 +310,10 @@ class GUI:
         self.entry_max_cnt = ttk.Entry(self.labelFr_continuous, textvariable=self.str_max_cnt, width=5)
         self.entry_max_cnt.grid(row=2, column=2, padx=5, pady=7, sticky=W)
 
+        # EMC, normally hidden
+        #self.button_EMC = ttk.Button(page_timed, text='EMC', command=self.emc_button_click)
+        #self.button_EMC.grid(row=1, column=4, padx=5, pady=7, sticky=W)
+
     def _initialize_tab_SETTINGS(self):
         # __init__ TAB 'SETTINGS' ************************************************************************
         # edit: 2024-4-24
@@ -726,27 +730,34 @@ class GUI:
         else:
             print(' ERROR in activating continuous measurement.')
 
-    # edit : 2024-3-16
-    def ContinuousTimeOut(self):
+    # edit : 2026-10-23
+    # desc : Returns to calling method after all measurements are ready.
+    #        In EMC mode set stop_after_max to continue until EMC-button is pressed.
+    def ContinuousTimeOut(self, stop_after_max = True):
         #print(' Time out ')
         if self.continuousActivated == True:
             self.button_read_chs_click()
             self.continuousCount = self.continuousCount + 1
 
-            # all readings are done -> stop
-            if self.continuousCount == int(self.str_max_cnt.get()):
-                self.continuousActivated = False
-                self.continuous_text.set('START')
+            if stop_after_max == True:
+                # all readings are done -> stop
+                if self.continuousCount == int(self.str_max_cnt.get()):
+                    self.continuousActivated = False
+                    self.continuous_text.set('START')
 
         if self.continuousActivated == True:
-            self.root.after(self.continuousInterval, self.ContinuousTimeOut)
+            self.root.after(self.continuousInterval, self.ContinuousTimeOut, stop_after_max)
         
-    # edit : 2024-3-10
+    # edit : 2026-10-23
     def save_timed_button_click(self):
         time_stamp = datetime.now()
         default_filename = time_stamp.strftime("timed %Y-%m-%d %H.%M.%S.txt")
         save_name = filedialog.asksaveasfilename(initialfile=default_filename)
-        self.callback('gui_save_timed', filename=save_name, comment='')
+
+        if save_name != '':
+            self.callback('gui_save_timed', filename=save_name, comment='')
+        else:
+            print(f' Cancel')
 
     # edit : 2024-1-26
     def reset_serie_button_click(self):
@@ -784,6 +795,38 @@ class GUI:
             self.button_clear_abs.config(state=tkinter.NORMAL)
         else:
             self.button_clear_abs.config(state=tkinter.DISABLED)
+
+    # edit : 2026-10-23
+    def emc_button_click(self):
+
+        # read & verify the value of the hardware delay
+        try:
+            hw_delay = int(fop.read_settings_file("device", "hw_delay"))
+            if (hw_delay < 0 or hw_delay > 3000):
+                default_hw_delay = int(mini_defaults.DEFAULT_SETTINGS["device"]["hw_delay"])
+                fop.update_settings_file("device", "hw_delay", default_hw_delay)
+                print(f" Incorrect hw_delay value! {default_hw_delay} (ms) will be used instead.")
+        except:
+            print(f" ERROR in reading hw_delay value from {fop.test_settings_file_name}")
+            hw_delay = 860
+       
+        # start new continuous
+        if self.continuousActivated == False:
+
+             # clear existing data
+            self.reset_serie_button_click()
+
+            self.continuousActivated = True
+            self.continuousInterval = int(float(self.str_interval.get()) * 1000 - hw_delay)
+            if self.continuousInterval < 100:
+                self.continuousInterval = 100
+            self.continuousCount = 0
+            self.root.after(self.continuousInterval, self.ContinuousTimeOut, False)
+            
+        # stop current continuous
+        else:
+            self.continuousActivated = False
+            self.save_timed_button_click()
 
 
 # edit : 2023-12-15
